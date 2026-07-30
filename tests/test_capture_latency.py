@@ -4,7 +4,6 @@ Measures time from trigger to first audio chunk delivered.
 Run: uv run python -m pytest tests/test_capture_latency.py -v
 """
 import time
-import pytest
 
 
 class FakeAudioDevice:
