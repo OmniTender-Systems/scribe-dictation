@@ -1,7 +1,9 @@
 import hashlib
+import hmac
 import platform
+import secrets
 import uuid
-import requests
+
 from PySide6.QtCore import QSettings
 
 ORGANIZATION = "ScribeDictation"
@@ -12,32 +14,33 @@ SETTING_LICENSE_KEY = "license_key"
 SETTING_LICENSE_SIGNATURE = "license_signature"
 SETTING_MACHINE_UUID = "machine_uuid"
 
-# Default configuration (can be updated for production)
-LICENSE_PROVIDER = "lemonsqueezy"  # "gumroad" or "lemonsqueezy"
-LEMONSQUEEZY_API_URL = "https://api.lemonsqueezy.com/v1/licenses/activate"
-GUMROAD_API_URL = "https://api.gumroad.com/v2/licenses/verify"
+# Self-signed licensing: keys are generated offline (scripts/generate_license.py)
+# and verified locally by this module. No third-party licensing API (Lemon Squeezy,
+# Gumroad) is required or called — avoids depending on an account that may not exist
+# yet, and avoids a per-verification network call entirely.
+#
+# NOTE: LICENSE_SECRET ships in plaintext in the app, so a determined attacker can
+# read it and mint their own valid-looking keys. Same threat model as the previous
+# offline-cache salt: this deters casual piracy, it is not DRM.
+LICENSE_SECRET = "scribe-dictation-super-secret-salt-2026"
 
-# TODO: replace with the real product ID once the Lemon Squeezy store exists (see LEMONSQUEEZY_SETUP.md)
-PRODUCT_ID = "scribe-dictation-pro"
+KEY_PREFIX = "SCRIBE"
 
-# NOTE: this salt ships in plaintext with the app, so it offers no protection against a
-# determined attacker (anyone can read it and forge a valid offline-cache signature). It
-# only guards against casual tampering with the cached QSettings value between honest
-# online verifications — it is not DRM.
-SECRET_SALT = "scribe-dictation-super-secret-salt-2026"
+# Where the "Buy Pro" button sends people. The buy/payment flow lives on the
+# storefront (Stripe Payment Link + crypto option), not in this app — after payment,
+# the buyer gets a key by email (generated with scripts/generate_license.py).
+BUY_URL = "https://nexiex.com/#buy"
 
 
 def get_machine_fingerprint() -> str:
     """Generate a stable, unique hardware fingerprint for the current machine."""
     try:
-        # Get MAC address or node identifier
         node = str(uuid.getnode())
         system = platform.system()
         node_name = platform.node()
         raw_id = f"{node}-{system}-{node_name}"
         return hashlib.sha256(raw_id.encode("utf-8")).hexdigest()
     except Exception:
-        # Fallback to a random UUID saved in QSettings if hardware lookup fails
         settings = QSettings(ORGANIZATION, APP_NAME)
         val = settings.value(SETTING_MACHINE_UUID, "")
         if not val:
@@ -47,8 +50,8 @@ def get_machine_fingerprint() -> str:
 
 
 def generate_signature(license_key: str, fingerprint: str) -> str:
-    """Generate a cryptographic signature combining the key and machine fingerprint."""
-    data = f"{license_key}:{fingerprint}:{SECRET_SALT}"
+    """Generate a signature binding a license key to this machine, for the offline cache."""
+    data = f"{license_key}:{fingerprint}:{LICENSE_SECRET}"
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
@@ -66,56 +69,42 @@ def is_offline_cache_valid() -> bool:
     return cached_sig == expected_sig
 
 
+def _checksum(body: str) -> str:
+    return hmac.new(
+        LICENSE_SECRET.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+    ).hexdigest()[:8]
+
+
+def generate_license_key() -> str:
+    """Mint a new license key. Run offline after a payment comes in (Stripe/crypto),
+    then send the printed key to the buyer by email. Not called from the app itself."""
+    body = "-".join(secrets.token_hex(2).upper() for _ in range(3))
+    return f"{KEY_PREFIX}-{body}-{_checksum(body).upper()}"
+
+
+def verify_license_key(license_key: str) -> bool:
+    """Verify a license key's self-contained signature. No network call."""
+    license_key = license_key.strip().upper()
+    parts = license_key.split("-")
+    if len(parts) != 5 or parts[0] != KEY_PREFIX:
+        return False
+    body = "-".join(parts[1:4])
+    expected = _checksum(body).upper()
+    return hmac.compare_digest(parts[4], expected)
+
+
 def verify_license_online(license_key: str) -> bool:
-    """Verify license key against the configured provider's API."""
+    """Verify a license key and, if valid, cache it for offline use.
+
+    Named for compatibility with the activation UI; despite the name this performs
+    no network call — verification is entirely local (see verify_license_key).
+    """
     license_key = license_key.strip()
     if not license_key:
         return False
-
-    if LICENSE_PROVIDER == "gumroad":
-        try:
-            response = requests.post(
-                GUMROAD_API_URL,
-                data={"product_permalink": PRODUCT_ID, "license_key": license_key},
-                timeout=10,
-            )
-            if response.status_code == 200:
-                data = response.json()
-                success = data.get("success", False)
-                purchase = data.get("purchase", {})
-                refunded = purchase.get("refunded", False)
-                chargebacked = purchase.get("chargebacked", False)
-                if success and not refunded and not chargebacked:
-                    cache_activation(license_key)
-                    return True
-        except Exception as e:
-            print(f"Gumroad verification failed: {e}")
-
-    elif LICENSE_PROVIDER == "lemonsqueezy":
-        try:
-            response = requests.post(
-                LEMONSQUEEZY_API_URL,
-                json={
-                    "license_key": license_key,
-                    "instance_name": get_machine_fingerprint(),
-                },
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                },
-                timeout=10,
-            )
-            if response.status_code == 200:
-                data = response.json()
-                # Lemon Squeezy return details
-                activated = data.get("activated", False)
-                status = data.get("license_key", {}).get("status", "")
-                if activated or status == "active":
-                    cache_activation(license_key)
-                    return True
-        except Exception as e:
-            print(f"Lemon Squeezy verification failed: {e}")
-
+    if verify_license_key(license_key):
+        cache_activation(license_key)
+        return True
     return False
 
 
