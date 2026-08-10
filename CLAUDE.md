@@ -1,7 +1,7 @@
 # CLAUDE.md — Scribe Dictation
 
 ## Project
-A cross-platform desktop dictation app. Captures system/microphone audio, sends to OpenAI Whisper for transcription, and pastes the result via a hotkey-driven PySide6 UI.
+A cross-platform desktop dictation app. Captures system/microphone audio, transcribes it offline (faster-whisper) or online (OpenAI Whisper API), and pastes the result via a hotkey-driven (Ctrl+Win) PySide6 UI.
 
 ## Tech stack
 - Python 3.12+

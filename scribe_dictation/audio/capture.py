@@ -117,11 +117,17 @@ class AudioRecorder:
             self._is_paused = False
 
     def _get_audio_data(self) -> np.ndarray:
-        """Concatenate all recorded chunks into a single array."""
+        """Concatenate all recorded chunks into a single array, skipping the initial chime period."""
         with self._lock:
             if not self._recording:
                 return np.array([], dtype=self.dtype)
-            return np.concatenate(self._recording, axis=0)
+            data = np.concatenate(self._recording, axis=0)
+
+            # Discard the first 0.35 seconds to prevent the startup chime from bleeding into transcription
+            skip_samples = int(0.35 * self.sample_rate)
+            if len(data) > skip_samples:
+                return data[skip_samples:]
+            return data
 
     def _save_wav(self, audio_data: np.ndarray) -> str:
         """Save audio data to a WAV file in the data directory.
