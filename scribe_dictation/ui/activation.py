@@ -10,11 +10,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QMessageBox,
 )
-from scribe_dictation.licensing import (
-    verify_license_online,
-    PRODUCT_ID,
-    LICENSE_PROVIDER,
-)
+from scribe_dictation.licensing import verify_license_online, BUY_URL
 
 
 class ActivationWorker(QThread):
@@ -154,14 +150,7 @@ class ActivationDialog(QDialog):
         self.worker = None
 
     def _open_buy_page(self):
-        # TODO: replace with the real checkout URL once the Lemon Squeezy store/product
-        # exists (see LEMONSQUEEZY_SETUP.md) — currently just the bare homepage.
-        url = (
-            f"https://gumroad.com/l/{PRODUCT_ID}"
-            if LICENSE_PROVIDER == "gumroad"
-            else "https://lemonsqueezy.com"
-        )
-        webbrowser.open(url)
+        webbrowser.open(BUY_URL)
 
     def _start_activation(self):
         key = self.license_input.text().strip()

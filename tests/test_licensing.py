@@ -5,6 +5,8 @@ from scribe_dictation.licensing import (
     generate_signature,
     is_offline_cache_valid,
     verify_license_online,
+    verify_license_key,
+    generate_license_key,
     cache_activation,
     deactivate_license,
 )
@@ -60,46 +62,23 @@ class TestLicensing(unittest.TestCase):
         deactivate_license()
         self.assertFalse(is_offline_cache_valid())
 
-    @patch("requests.post")
-    def test_verify_lemonsqueezy_online_success(self, mock_post):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "activated": True,
-            "license_key": {"status": "active"},
-        }
-        mock_post.return_value = mock_response
+    def test_generate_and_verify_license_key(self):
+        key = generate_license_key()
+        self.assertTrue(verify_license_key(key))
 
-        with patch("scribe_dictation.licensing.LICENSE_PROVIDER", "lemonsqueezy"):
-            success = verify_license_online("test-key")
-            self.assertTrue(success)
-            self.assertTrue(is_offline_cache_valid())
+    def test_verify_license_key_rejects_tampering(self):
+        key = generate_license_key()
+        tampered = key[:-1] + ("0" if key[-1] != "0" else "1")
+        self.assertFalse(verify_license_key(tampered))
 
-    @patch("requests.post")
-    def test_verify_lemonsqueezy_online_failure(self, mock_post):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "activated": False,
-            "license_key": {"status": "expired"},
-        }
-        mock_post.return_value = mock_response
+    def test_verify_license_key_rejects_garbage(self):
+        self.assertFalse(verify_license_key("not-a-real-key"))
+        self.assertFalse(verify_license_key(""))
 
-        with patch("scribe_dictation.licensing.LICENSE_PROVIDER", "lemonsqueezy"):
-            success = verify_license_online("bad-key")
-            self.assertFalse(success)
+    def test_verify_license_online_success_caches(self):
+        key = generate_license_key()
+        self.assertTrue(verify_license_online(key))
+        self.assertTrue(is_offline_cache_valid())
 
-    @patch("requests.post")
-    def test_verify_gumroad_online_success(self, mock_post):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "success": True,
-            "purchase": {"refunded": False, "chargebacked": False},
-        }
-        mock_post.return_value = mock_response
-
-        with patch("scribe_dictation.licensing.LICENSE_PROVIDER", "gumroad"):
-            success = verify_license_online("test-key")
-            self.assertTrue(success)
-            self.assertTrue(is_offline_cache_valid())
+    def test_verify_license_online_rejects_invalid(self):
+        self.assertFalse(verify_license_online("SCRIBE-0000-0000-0000-00000000"))
