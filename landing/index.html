@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scribe Dictation Pro — hold a key, speak, get text</title>
+<meta name="description" content="Cross-platform desktop dictation app. Global hotkey, offline or cloud transcription, auto-paste anywhere. One-time $19 license, no subscription.">
+<style>
+  :root{
+    --bg:#0f1117; --panel:#171a24; --panel-2:#1e2230; --border:#2a2f3f;
+    --text:#e7e9f0; --muted:#9aa2b8; --accent:#8fd6ff; --accent-2:#a6e3a1;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f7f8fb; --panel:#ffffff; --panel-2:#f1f3f8; --border:#e1e4ee;
+      --text:#161925; --muted:#5b6274; --accent:#2b7fb8; --accent-2:#2f9e5b; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    line-height:1.5}
+  .wrap{max-width:880px;margin:0 auto;padding:0 24px}
+  header{padding:80px 0 56px;text-align:center}
+  .badge{display:inline-block;font-size:13px;color:var(--muted);
+    border:1px solid var(--border);border-radius:999px;padding:6px 14px;margin-bottom:20px}
+  h1{font-size:clamp(32px,5vw,52px);margin:0 0 16px;letter-spacing:-0.02em}
+  .sub{font-size:19px;color:var(--muted);max-width:560px;margin:0 auto 32px}
+  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{display:inline-block;padding:14px 28px;border-radius:10px;font-weight:600;
+    text-decoration:none;font-size:16px;border:1px solid transparent}
+  .btn-primary{background:var(--accent-2);color:#0b1410}
+  .btn-secondary{background:var(--panel-2);color:var(--text);border-color:var(--border)}
+  section{padding:48px 0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:24px}
+  .card h3{margin:0 0 8px;font-size:17px}
+  .card p{margin:0;color:var(--muted);font-size:15px}
+  .price{background:var(--panel);border:1px solid var(--border);border-radius:16px;
+    padding:40px;text-align:center;margin:0 auto;max-width:420px}
+  .price .amount{font-size:48px;font-weight:700;margin:8px 0}
+  .price .amount span{font-size:18px;color:var(--muted);font-weight:400}
+  .price ul{list-style:none;padding:0;margin:24px 0;text-align:left;color:var(--muted);font-size:15px}
+  .price li{padding:6px 0;display:flex;gap:8px}
+  .price li:before{content:"✓";color:var(--accent-2)}
+  footer{padding:40px 0;text-align:center;color:var(--muted);font-size:13px;border-top:1px solid var(--border)}
+  footer a{color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <span class="badge">Windows · macOS · Linux</span>
+      <h1>Hold a key. Speak. Get text.</h1>
+      <p class="sub">Scribe Dictation turns your voice into text anywhere on your desktop — one hotkey, no subscription, works offline.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#buy">Buy Pro — $19</a>
+        <a class="btn btn-secondary" href="https://github.com/subtiliorars-sys/scribe-dictation" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+    </header>
+
+    <section>
+      <div class="grid">
+        <div class="card">
+          <h3>Global hotkey</h3>
+          <p>Hold Ctrl+Win to talk, or tap to lock recording on. Works in any app, any window.</p>
+        </div>
+        <div class="card">
+          <h3>Offline or cloud</h3>
+          <p>Transcribe locally with faster-whisper (GPU-accelerated) or use the OpenAI Whisper API — your choice, switch anytime.</p>
+        </div>
+        <div class="card">
+          <h3>Auto-paste</h3>
+          <p>Transcribed text lands directly in your active window. No copy step.</p>
+        </div>
+        <div class="card">
+          <h3>Runs in the tray</h3>
+          <p>Stays out of your way in the system tray until you need it.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="buy">
+      <div class="price">
+        <div>Scribe Dictation Pro</div>
+        <div class="amount">$19 <span>one-time</span></div>
+        <ul>
+          <li>Lifetime license, no subscription</li>
+          <li>Activate on up to 3 machines</li>
+          <li>Windows, macOS, Linux</li>
+          <li>Free updates</li>
+        </ul>
+        <!-- TODO: replace with real Lemon Squeezy checkout link once the store/product exists -->
+        <a class="btn btn-primary" href="https://lemonsqueezy.com" style="width:100%">Buy now</a>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        &copy; 2026 Scribe Dictation · <a href="https://github.com/subtiliorars-sys/scribe-dictation">GitHub</a>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>
