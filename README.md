@@ -1,124 +1,235 @@
 # Scribe Dictation
 
-A cross-platform desktop dictation application. It captures microphone audio, transcribes it offline via `faster-whisper` or online via the OpenAI Whisper API, and automatically copies and pastes the result into the active window.
+<p align="center">
+  <img src="assets/scribe-preview.png" alt="Scribe Dictation - Windows Dictation App" width="600">
+</p>
+
+<p align="center">
+  <strong>Dictate 3x faster with 100% privacy. No subscriptions. No cloud. Just works.</strong>
+</p>
+
+<p align="center">
+  <a href="https://subtiliorars-sys.gumroad.com/l/eyiexi?discount=EARLY40"><img src="https://img.shields.io/badge/Get_Private_Scribe-40%25_OFF-green" alt="Get Private Scribe"></a>
+  <a href="https://github.com/subtiliorars-sys/scribe-dictation"><img src="https://img.shields.io/badge/Star_on_GitHub-?_Stars-blue" alt="Star on GitHub"></a>
+  <a href="https://subtiliorars-sys.gumroad.com/l/eyiexi"><img src="https://img.shields.io/badge/Buy_Now-$29-success" alt="Buy Now"></a>
+</p>
 
 ---
 
-## 1. UI Layout Guidelines
+## ?? The Problem
 
-The interface is built using **PySide6** and follows a clean, single-window design optimized for accessibility and status visibility:
+**Typing is slow. Cloud dictation compromises your privacy.**
 
-```
-+───────────────────────────────────────────────────+
-| File  Help                                        |
-+───────────────────────────────────────────────────+
-|                                                   |
-|  Transcribed text will appear here...            |
-|                                                   |
-|                                                   |
-+───────────────────────────────────────────────────+
-|  [ Mic Record ]   [ Copy Clipboard ]  [ Clear ]   |
-+───────────────────────────────────────────────────+
-| Status: Idle / Recording... / Transcribing...      |
-+───────────────────────────────────────────────────+
-```
+You're spending hours each day typing emails, docs, code comments, and messages. Meanwhile:
 
-### Visual Components & Spacing
-*   **Main Window**: Minimum dimensions are configured to `480x360` pixels to ensure readable text preview while staying compact.
-*   **Central Widget Layout**: A `QVBoxLayout` with `12px` margins and `8px` spacing.
-*   **Text Editor (`QPlainTextEdit`)**: Minimum height of `180px` for transcribing text.
-*   **Control Panel (`QHBoxLayout`)**:
-    *   **Record Button**: Expanding push button (`40px` minimum height) with a microphone emoji. Toggles status/recording.
-    *   **Copy Button**: Copies text to clipboard.
-    *   **Clear Button**: Resets text box and status.
-*   **Status Bar**: Located at the bottom to report app states: `Idle`, `Recording... (Ctrl+Win to stop)`, `Transcribing...`, `Done`, or error messages.
-*   **System Tray Integration**: Provides background running capabilities. Closing the window minimizes the app to the system tray on platforms where supported, with context options for quick toggles, settings, and quitting.
+- **Google Docs Voice Typing** uploads your audio to Google's servers
+- **Microsoft Dictation** sends your voice data to the cloud
+- **Otter.ai** costs $10/month and stores everything on their servers
+- **Built-in Windows dictation** is inaccurate and requires internet
+
+**There's a better way.**
 
 ---
 
-## 2. Configuration Setup
+## ? What Is Scribe Dictation?
 
-The application uses `PySide6.QtCore.QSettings` for persistent configuration.
+Scribe Dictation is a **Windows desktop app** that turns your voice into text faster than you can type � with **100% privacy**, **no subscriptions**, and **zero cloud dependency**.
 
-### Configuration Storage Paths
-*   **Windows**: Stored in the registry at:
-    `HKEY_CURRENT_USER\Software\ScribeDictation\Scribe Dictation`
-*   **macOS**: Stored in the application plist file:
-    `~/Library/Preferences/com.ScribeDictation.Scribe Dictation.plist`
-*   **Linux**: Stored in the ini config:
-    `~/.config/ScribeDictation/Scribe Dictation.conf`
+### Key Features
 
-### Configuration Keys & Settings
-| Key | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `use_local` | string | `"true"` | `"true"` for local offline faster-whisper transcription; `"false"` for OpenAI API. |
-| `api_key` | string | `""` | OpenAI API key (`sk-...`). Required if `use_local` is `"false"`. Falls back to the `OPENAI_API_KEY` environment variable. |
-| `local_model_size` | string | `"base"` | Model size for local execution (`tiny`, `base`, `small`, `medium`, `large-v3`). |
-| `audio_device` | string | `""` | Selected input device index (from PyAudio/sounddevice). Empty/Default uses system default. |
-| `auto_paste` | string | `"true"` | `"true"` to simulate `Ctrl+V` (or `Cmd+V` on macOS) to paste text after transcription completes. |
+- ??? **100% Private Offline Mode** � Your voice never leaves your computer
+- ? **Lightning-Fast Transcription** � Real-time speech-to-text using faster-whisper
+- ?? **Optional Cloud Mode** � Bring your own OpenAI API key for maximum accuracy
+- ?? **Global Hotkey** � Works in ANY app (VS Code, Notion, Slack, email, etc.)
+- ?? **Auto-Paste** � Text appears instantly in your active window
+- ?? **One-Time Payment** � $29, lifetime access, no subscriptions
+- ??? **Windows Native** � Built with PySide6 for seamless Windows integration
 
 ---
 
-## 3. User Instructions & Keybindings
+## ?? Perfect For
 
-### Prerequisites & Running
-Install dependencies using `uv` (recommended) or standard `pip`:
+- **Developers** � Write code, docs, and comments 3x faster
+- **Writers & Bloggers** � Draft content without carpal tunnel
+- **Productivity Enthusiasts** � Optimize your workflow
+- **Privacy-Conscious Users** � Refuse to upload voice data to the cloud
+- **Anyone with RSI** � Reliable dictation for typing difficulties
+
+---
+
+## ?? Quick Start
+
+### Option 1: Download the App (Easiest)
+
+**Buy Private Scribe for $29:**
+?? [https://subtiliorars-sys.gumroad.com/l/eyiexi](https://subtiliorars-sys.gumroad.com/l/eyiexi?discount=EARLY40)
+
+**Use code `EARLY40` for 40% off** (first 20 customers only)
+
+Download includes:
+- `PrivateScribe.exe` � standalone Windows app (no installation required)
+- Lifetime license key
+- Free updates forever
+
+### Option 2: Run from Source (Developers)
+
+#### Prerequisites
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- Windows 10/11
+
+#### Installation
+
 ```bash
-# Install package dependencies
+# Clone the repo
+git clone https://github.com/subtiliorars-sys/scribe-dictation.git
+cd scribe-dictation
+
+# Install dependencies
 uv sync
 
-# Run Scribe Dictation
+# Run the app
 uv run python main.py
 ```
 
-### Keybindings (Keyboard Shortcuts)
-The application utilizes both global and application-specific keyboard shortcuts:
+---
 
-*   **Global Hotkey: `Ctrl+Win` (Windows/Linux) or `Ctrl+Cmd` (macOS)**
-    *   *Hold to Talk*: Press and hold the keys to record; release them to stop recording and begin transcribing.
-    *   *Tap to Toggle*: Briefly press (less than 0.4 seconds) and release to toggle-lock recording on. Press `Ctrl+Win` again to stop.
-*   **Application-Specific Shortcuts** (Active only when the Scribe Dictation window is focused):
-    *   `Ctrl+R`: Toggle recording on/off.
-    *   `Ctrl+,`: Open Settings dialog.
-    *   `Ctrl+Q`: Exit application.
+## ?? Documentation
+### UI Layout
 
-### Auto-Silence Detection
-The application actively monitors background levels. If incoming audio levels drop below the threshold (`0.01` RMS) for `1.5` seconds, the recording stops automatically and initiates transcription.
+The interface is built using **PySide6** with a clean, single-window design:
+
+```
++---------------------------------------------------+
+� File  Help                                        �
++---------------------------------------------------�
+�                                                   �
+�  Transcribed text will appear here...            �
+�                                                   �
+�                                                   �
++---------------------------------------------------�
+�  [ ?? Mic Record ]   [ ?? Copy ]  [ ??? Clear ]   �
++---------------------------------------------------�
+� Status: Idle / Recording... / Transcribing...     �
++---------------------------------------------------+
+```
+
+### Keybindings
+
+- **Global Hotkey: `Ctrl+Win`**
+  - *Hold to Talk*: Press and hold to record, release to transcribe
+  - *Tap to Toggle*: Briefly press to toggle-lock recording on/off
+
+- **App-Specific Shortcuts** (when window is focused):
+  - `Ctrl+R` � Toggle recording
+  - `Ctrl+,` � Open Settings
+  - `Ctrl+Q` � Quit app
+
+### Configuration
+
+The app uses `PySide6.QtCore.QSettings` for persistent configuration:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `use_local` | `"true"` | `"true"` for offline mode, `"false"` for OpenAI API |
+| `api_key` | `""` | OpenAI API key (required if `use_local` is `"false"`) |
+| `local_model_size` | `"base"` | Model size: `tiny`, `base`, `small`, `medium`, `large-v3` |
+| `audio_device` | `""` | Input device index (empty = system default) |
+| `auto_paste` | `"true"` | Auto-paste transcribed text into active window |
 
 ---
 
-## 4. CUDA & GPU Acceleration Setup
+## ?? GPU Acceleration (Optional)
 
-To achieve fast, real-time transcription locally using `faster-whisper`, GPU acceleration via NVIDIA CUDA is highly recommended.
+For faster transcription, enable CUDA acceleration:
 
-### Step-by-Step CUDA Setup (Windows/Linux)
+### Prerequisites
 
-Local offline transcription is powered by `ctranslate2`, which requires specific NVIDIA libraries.
+- NVIDIA GPU (Compute Capability 5.0+)
+- CUDA Toolkit 12.x
+- cuDNN v8 or v9
 
-#### Step 1: Verify Hardware Compatibility
-Ensure you have a CUDA-compatible NVIDIA GPU (Compute Capability 5.0 or higher is required).
+### Setup
 
-#### Step 2: Install CUDA Toolkit & cuDNN
-1.  **CUDA Toolkit**: Download and install **CUDA Toolkit 12.x** (or **11.x** depending on your PyTorch build compatibility) from [NVIDIA CUDA Toolkit Archive](https://developer.nvidia.com/cuda-toolkit-archive).
-2.  **cuDNN**: Download the corresponding version of **cuDNN v8 or v9** from the [NVIDIA cuDNN Archive](https://developer.nvidia.com/cudnn).
-3.  **Path Configuration**: Extract the cuDNN files and place the DLLs (`cublas64_12.dll`, `cudnn_ops_infer64_8.dll`, etc.) in a directory added to your system `PATH`, or copy them directly into the root folder of your virtual environment `.venv/Scripts/`.
+1. **Install CUDA Toolkit** from [NVIDIA CUDA Toolkit Archive](https://developer.nvidia.com/cuda-toolkit-archive)
+2. **Install cuDNN** from [NVIDIA cuDNN Archive](https://developer.nvidia.com/cudnn)
+3. **Install PyTorch with CUDA:**
+   ```bash
+   uv pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
+   ```
+4. **Verify CUDA:**
+   ```bash
+   uv run python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+   ```
+5. **Run the app** and select **Local (faster-whisper) - Offline** mode in Settings
 
-#### Step 3: Install PyTorch with CUDA Support
-By default, standard package installation may fetch CPU-only wheels. Force pip/uv to install the CUDA-supported version of PyTorch:
+If CUDA is unavailable, the app automatically falls back to CPU execution.
+
+---
+
+## ?? Building from Source
+
+### Build the Executable
+
 ```bash
-# For CUDA 12.1 compatibility
-uv pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
-
-# Verify PyTorch detects CUDA:
-uv run python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+# Build standalone executable
+uv run python build.py
 ```
 
-#### Step 4: Run & Select Local Mode
-1. Start the application (`uv run python main.py`).
-2. Open Settings (`Ctrl+,` or File -> Settings).
-3. Select **Transcription Mode: Local (faster-whisper) - Offline**.
-4. Choose a **Local Model Size** suitable for your VRAM:
-    *   `tiny` / `base`: < 2GB VRAM (extremely fast)
-    *   `small` / `medium`: 2GB - 4GB VRAM (balanced)
-    *   `large-v3`: > 6GB VRAM (high accuracy)
-5. The service will automatically load on `cuda` if PyTorch reports CUDA is available. If GPU setup is missing, it will safely fall back to CPU execution.
+Output: `dist/PrivateScribe.exe`
+
+---
+
+## ?? Comparison: Private Scribe vs. Alternatives
+
+| Feature | Private Scribe | Google Docs | Otter.ai | Microsoft Dictation |
+|---------|---------------|-------------|----------|---------------------|
+| **100% Offline** | ? | ? | ? | ? |
+| **One-Time Payment** | ? ($29) | ? (Free) | ? ($10/mo) | ? (Free) |
+| **Privacy First** | ? | ? | ? | ? |
+| **No Account Required** | ? | ? | ? | ? |
+| **Global Hotkey** | ? | ? | ? | ? |
+| **Auto-Paste** | ? | ? | ? | ? |
+| **Windows Native** | ? | ? | ? | ? |
+
+---
+
+## ?? Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+1. Fork the repo
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## ?? License
+
+This project is licensed under the MIT License � see the [LICENSE](LICENSE) file for details.
+
+---
+
+## ?? Support
+
+If this project helps you, please consider:
+
+- ? **Starring the repo** � helps others find it
+- ?? **Sharing on Twitter** � spread the word
+- ?? **Joining the discussion** � open an issue or PR
+- ?? **Buying a license** � support development and get the app
+
+<p align="center">
+  <strong>Built with ?? for privacy-conscious developers and writers</strong>
+</p>
+
+---
+
+## ?? Related Projects
+
+- **[Fleet Health Dashboard](https://github.com/subtiliorars-sys/fleet-health)** � Monitor all your services in one place
+- **[Multi-Agent Fleet Field Guide](https://subtiliorars-sys.gumroad.com/l/ixrsyx?discount=LAUNCH50)** � Scale your AI-assisted workflow
+
