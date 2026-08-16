@@ -19,6 +19,8 @@ from scribe_dictation.audio.vad import is_speech_present
 from scribe_dictation.transcribe.local import LocalWhisperService
 from scribe_dictation.transcribe.vocabulary import CustomVocabularyManager
 
+from scribe_dictation.transcribe.voice_profile import VoiceProfile
+
 DEFAULT_MODEL = "whisper-1"
 DEFAULT_LOCAL_MODEL = "base"
 MAX_RETRIES = 2
@@ -41,11 +43,11 @@ class TranscribeService:
         use_local: bool = False,
         local_model_size: str = DEFAULT_LOCAL_MODEL,
         local_device: str = "auto",
-        local_compute_type: str = "default",
         vocabulary_manager: Optional[CustomVocabularyManager] = None,
         initial_prompt: Optional[str] = None,
         language: Optional[str] = None,
         task: str = "transcribe",
+        voice_profile: Optional[VoiceProfile] = None,
     ):
         self.use_local = use_local
         self.model = model
@@ -56,6 +58,8 @@ class TranscribeService:
         self.initial_prompt = initial_prompt
         self.language = language
         self.task = task
+        self.voice_profile = voice_profile
+
 
         self._local_service: Optional[LocalWhisperService] = None
         if self.use_local:
@@ -154,23 +158,30 @@ class TranscribeService:
             and target_task.lower().strip() in ("translate", "translation")
             else "transcribe"
         )
+        
+        effective_prompt = (
+            self.voice_profile.bias_prompt() if self.voice_profile else initial_prompt
+        )
 
         if self.use_local:
             try:
                 if self._local_service is None:
                     self._init_local_model()
-                return await self._local_service.transcribe_async(
+                res = await self._local_service.transcribe_async(
                     audio_path,
-                    initial_prompt=initial_prompt,
+                    initial_prompt=effective_prompt,
                     language=target_lang,
                     task=normalized_task,
                 )
+                if self.voice_profile and res:
+                    self.voice_profile.observe(res)
+                return res
             except Exception as e:
                 print(f"Local transcription failed: {e}")
                 return f"[Local transcription failed: {e}]"
 
         # Online API mode
-        prompt = self._get_initial_prompt(initial_prompt)
+        prompt = self._get_initial_prompt(effective_prompt)
         last_error: Optional[Exception] = None
 
         for attempt in range(
@@ -206,6 +217,8 @@ class TranscribeService:
                 text = transcript.text
                 if self.vocabulary_manager is not None:
                     text = self.vocabulary_manager.apply_replacements(text)
+                if self.voice_profile and text:
+                    self.voice_profile.observe(text)
                 return text
 
             except Exception as e:
