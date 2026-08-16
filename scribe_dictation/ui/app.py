@@ -53,6 +53,7 @@ from scribe_dictation.export import (
     to_txt,
 )
 from scribe_dictation.transcribe.service import TranscribeService
+from scribe_dictation.ui.overlay import VoiceCapsule
 
 APP_NAME = "Scribe Dictation"
 ORGANIZATION = "ScribeDictation"
@@ -61,95 +62,168 @@ SETTINGS_DEVICE = "audio_device"
 SETTINGS_AUTO_PASTE = "auto_paste"
 SETTINGS_USE_LOCAL = "use_local"
 SETTINGS_LOCAL_MODEL_SIZE = "local_model_size"
+SETTINGS_PLAY_SOUNDS = "play_sounds"
 
 # ── Global hotkey support ─────────────────────────────────────────────
 
 _global_hotkey_listener = None
 
+# Default hotkey configuration - Ctrl+Win is the default, reliable non-text hotkey
+DEFAULT_GLOBAL_HOTKEY = "Ctrl + Win"
+SUPPORTED_HOTKEYS = [
+    "Ctrl + Win",      # Default: modifier-only, no character output
+    "Ctrl + Alt",      # Clean modifier pair
+    "Ctrl + Shift",    # Clean modifier pair
+    "Alt + Shift",     # Clean modifier pair
+    "Ctrl + Space",    # Common dictation / trigger key
+    "Shift + Space",   # Alternate space combination
+    "F1",              # Dedicated Function Key
+    "F8",              # Dedicated Function Key
+    "F9",              # Dedicated Function Key
+    "F10",             # Dedicated Function Key
+    "F11",             # Dedicated Function Key
+    "F12",             # Dedicated Function Key
+    "Caps Lock",       # Single toggle key
+]
 
-def _ensure_custom_chimes():
-    """Generate high-quality rising/falling swoop chirps in the temp directory."""
-    import os
+
+# Pre-cached in-memory WAV byte buffers for instantaneous zero-latency playback
+_TAPE_PRESS_WAV = None
+_TAPE_RELEASE_WAV = None
+
+def _get_tape_sounds():
+    """Synthesize authentic, punchy tape-recorder physical button click/clunk sounds."""
+    global _TAPE_PRESS_WAV, _TAPE_RELEASE_WAV
+    if _TAPE_PRESS_WAV is not None and _TAPE_RELEASE_WAV is not None:
+        return _TAPE_PRESS_WAV, _TAPE_RELEASE_WAV
+
+    import io
     import math
+    import random
     import struct
     import wave
-    import tempfile
 
-    temp_dir = tempfile.gettempdir()
-    start_path = os.path.join(temp_dir, "scribe_start.wav")
-    stop_path = os.path.join(temp_dir, "scribe_stop.wav")
-
-    # Generate chimes unconditionally on startup to ensure latest design
     sample_rate = 44100
-    duration = 0.22  # 220ms swoop
-    total_samples = int(duration * sample_rate)
+    rng = random.Random(42)
 
-    def generate_and_save(filepath, start_freq, end_freq):
-        buffer = [0.0] * total_samples
-        for i in range(total_samples):
-            t = i / sample_rate
-            # Linear frequency swoop glide phase
-            phase = (
-                2
-                * math.pi
-                * (start_freq * t + 0.5 * (end_freq - start_freq) * (t**2) / duration)
-            )
+    def generate_wav(samples):
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as f:
+            f.setnchannels(1)
+            f.setsampwidth(2)
+            f.setframerate(sample_rate)
+            raw = bytearray()
+            for s in samples:
+                val = int(max(-1.0, min(1.0, s)) * 32767)
+                raw.extend(struct.pack("<h", val))
+            f.writeframes(raw)
+        return buf.getvalue()
 
-            # Smooth cosine-like envelope: 40ms fade-in, 60ms fade-out
-            fade_in = 0.04
-            fade_out = 0.06
-            if t < fade_in:
-                env = t / fade_in
-            elif t > (duration - fade_out):
-                env = (duration - t) / fade_out
-            else:
-                env = 1.0
+    # ── Tape Button Press / Punch In (~85ms) ──────────────────────────
+    # 1. Plastic switch pre-travel click (high freq 2800-4500Hz noise & snap)
+    # 2. Heavy solenoid/tape head carrier latch (120-180Hz hollow punch)
+    # 3. Metallic leaf-spring contact ring (950Hz resonance)
+    dur_press = 0.085
+    n_press = int(dur_press * sample_rate)
+    press_samples = [0.0] * n_press
+    for i in range(n_press):
+        t = i / sample_rate
+        # Transient snap
+        snap_env = math.exp(-t * 180.0)
+        snap_noise = (rng.random() * 2 - 1) * snap_env * 0.45
+        snap_tone = math.sin(2 * math.pi * 3400 * t) * snap_env * 0.35
 
-            # Soft pure sine wave chirp
-            val = math.sin(phase) * env * 0.35
-            buffer[i] = val
+        # Solenoid / Head carrier thud punch (dual pitch drop 180Hz -> 85Hz)
+        pitch = 180.0 * math.exp(-t * 25.0)
+        thud_env = math.exp(-t * 38.0)
+        thud = math.sin(2 * math.pi * pitch * t) * thud_env * 0.75
 
-        try:
-            with wave.open(filepath, "wb") as wav_file:
-                wav_file.setnchannels(1)
-                wav_file.setsampwidth(2)
-                wav_file.setframerate(sample_rate)
-                for val in buffer:
-                    val = max(-1.0, min(1.0, val))
-                    sample = int(val * 32767)
-                    wav_file.writeframesraw(struct.pack("<h", sample))
-        except Exception:
-            pass
+        # Metal casing resonance
+        case_env = math.exp(-t * 60.0)
+        case_res = math.sin(2 * math.pi * 920 * t) * case_env * 0.25
 
-    generate_and_save(start_path, start_freq=220.0, end_freq=360.0)  # Rising swoop
-    generate_and_save(stop_path, start_freq=360.0, end_freq=220.0)  # Falling swoop
+        press_samples[i] = snap_noise + snap_tone + thud + case_res
+
+    # ── Tape Button Release / Punch Out (~95ms) ───────────────────────
+    # 1. Mechanical spring unlock snap (quick high-pitch metallic click)
+    # 2. Cassette spring pushback clunk (hollow chassis clack at 240Hz & 650Hz)
+    dur_rel = 0.095
+    n_rel = int(dur_rel * sample_rate)
+    rel_samples = [0.0] * n_rel
+    for i in range(n_rel):
+        t = i / sample_rate
+        snap_env = math.exp(-t * 220.0)
+        snap_noise = (rng.random() * 2 - 1) * snap_env * 0.5
+        snap_click = math.sin(2 * math.pi * 2600 * t) * snap_env * 0.4
+
+        clunk_env = math.exp(-t * 32.0)
+        clunk_low = math.sin(2 * math.pi * 140 * t) * clunk_env * 0.65
+        chassis_body = math.sin(2 * math.pi * 620 * t) * math.exp(-t * 50.0) * 0.35
+
+        rel_samples[i] = snap_noise + snap_click + clunk_low + chassis_body
+
+    _TAPE_PRESS_WAV = generate_wav(press_samples)
+    _TAPE_RELEASE_WAV = generate_wav(rel_samples)
+    return _TAPE_PRESS_WAV, _TAPE_RELEASE_WAV
 
 
 def _play_sound(start: bool):
-    """Play a pleasant, custom generated chime to indicate start or end of recording."""
+    """Play tactile, authentic tape recorder punch on/off sound effect."""
     try:
-        import sys
+        settings = QSettings(ORGANIZATION, APP_NAME)
+        val = settings.value(SETTINGS_PLAY_SOUNDS, True)
+        if isinstance(val, str) and val.lower() == "false":
+            return
+        elif isinstance(val, bool) and not val:
+            return
 
+        import sys
         if sys.platform == "win32":
             import winsound
-            import os
-            import tempfile
-
-            _ensure_custom_chimes()
-            filename = "scribe_start.wav" if start else "scribe_stop.wav"
-            filepath = os.path.join(tempfile.gettempdir(), filename)
-            if os.path.exists(filepath):
-                winsound.PlaySound(filepath, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            press_wav, rel_wav = _get_tape_sounds()
+            data = press_wav if start else rel_wav
+            winsound.PlaySound(data, winsound.SND_MEMORY | winsound.SND_ASYNC)
     except Exception as e:
         print(f"Failed to play sound: {e}")
+
+
+def _is_hotkey_match(hotkey_type, current_keys, key=None):
+    """Check if the current key combination matches the configured hotkey."""
+    from pynput import keyboard
+    if hotkey_type == "Ctrl + Win":
+        return keyboard.Key.ctrl in current_keys and keyboard.Key.cmd in current_keys
+    elif hotkey_type == "Ctrl + Alt":
+        return keyboard.Key.ctrl in current_keys and keyboard.Key.alt in current_keys
+    elif hotkey_type == "Ctrl + Shift":
+        return keyboard.Key.ctrl in current_keys and keyboard.Key.shift in current_keys
+    elif hotkey_type == "Alt + Shift":
+        return keyboard.Key.alt in current_keys and keyboard.Key.shift in current_keys
+    elif hotkey_type == "Ctrl + Space":
+        return keyboard.Key.ctrl in current_keys and keyboard.Key.space in current_keys
+    elif hotkey_type == "Shift + Space":
+        return keyboard.Key.shift in current_keys and keyboard.Key.space in current_keys
+    elif hotkey_type == "Caps Lock":
+        return key == keyboard.Key.caps_lock
+    elif hotkey_type == "F1":
+        return key == keyboard.Key.f1
+    elif hotkey_type == "F8":
+        return key == keyboard.Key.f8
+    elif hotkey_type == "F9":
+        return key == keyboard.Key.f9
+    elif hotkey_type == "F10":
+        return key == keyboard.Key.f10
+    elif hotkey_type == "F11":
+        return key == keyboard.Key.f11
+    elif hotkey_type == "F12":
+        return key == keyboard.Key.f12
+    return False
 
 
 def _start_global_hotkey(press_callback, release_callback):
     """Start a background thread listening for global hotkey (press/release)."""
     global _global_hotkey_listener
 
-    if _global_hotkey_listener is not None:
-        return
+    _stop_global_hotkey()
 
     try:
         from pynput import keyboard
@@ -157,7 +231,7 @@ def _start_global_hotkey(press_callback, release_callback):
         return
 
     settings = QSettings(ORGANIZATION, APP_NAME)
-    hotkey_type = settings.value("global_hotkey", "Ctrl + Win")
+    hotkey_type = settings.value("global_hotkey", DEFAULT_GLOBAL_HOTKEY)
 
     current_keys = set()
     is_triggered = False
@@ -176,21 +250,7 @@ def _start_global_hotkey(press_callback, release_callback):
 
         current_keys.add(normalized_key)
 
-        match = False
-        if hotkey_type == "Ctrl + Win":
-            match = (
-                keyboard.Key.ctrl in current_keys and keyboard.Key.cmd in current_keys
-            )
-        elif hotkey_type == "Ctrl + Space":
-            match = (
-                keyboard.Key.ctrl in current_keys and keyboard.Key.space in current_keys
-            )
-        elif hotkey_type == "Caps Lock":
-            match = key == keyboard.Key.caps_lock
-        elif hotkey_type == "F1":
-            match = key == keyboard.Key.f1
-
-        if match:
+        if _is_hotkey_match(hotkey_type, current_keys, key):
             if not is_triggered:
                 is_triggered = True
                 if hasattr(press_callback, "__self__"):
@@ -216,23 +276,17 @@ def _start_global_hotkey(press_callback, release_callback):
         elif key in (keyboard.Key.shift_l, keyboard.Key.shift_r):
             normalized_key = keyboard.Key.shift
 
+        # If a modifier key is released, also check if the hotkey trigger ended
+        was_match = _is_hotkey_match(hotkey_type, current_keys, key)
         try:
             current_keys.discard(normalized_key)
         except KeyError:
             pass
 
-        release_match = False
-        if hotkey_type == "Ctrl + Win":
-            release_match = normalized_key in (keyboard.Key.ctrl, keyboard.Key.cmd)
-        elif hotkey_type == "Ctrl + Space":
-            release_match = normalized_key in (keyboard.Key.ctrl, keyboard.Key.space)
-        elif hotkey_type == "Caps Lock":
-            release_match = key == keyboard.Key.caps_lock
-        elif hotkey_type == "F1":
-            release_match = key == keyboard.Key.f1
-
-        if release_match:
-            if is_triggered:
+        if is_triggered:
+            # Trigger release if hotkey combination is no longer active
+            now_match = _is_hotkey_match(hotkey_type, current_keys, None)
+            if not now_match or was_match:
                 is_triggered = False
                 if hasattr(release_callback, "__self__"):
                     from PySide6.QtCore import QMetaObject, Qt
@@ -260,19 +314,104 @@ def _stop_global_hotkey():
         _global_hotkey_listener = None
 
 
-def _simulate_paste():
-    """Simulate Ctrl+V (Windows) / Cmd+V (macOS) to paste into active window."""
-    try:
-        from pynput.keyboard import Controller, Key
+_last_paste_time = 0.0
 
+def _simulate_paste(target_hwnd: Optional[int] = None):
+    """Simulate atomic Ctrl+V (Windows/Linux) / Cmd+V (macOS) to paste into active window."""
+    global _last_paste_time
+    import time
+    now = time.monotonic()
+    # Debounce paste simulation within 200ms
+    if now - _last_paste_time < 0.2:
+        return
+    _last_paste_time = now
+
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+
+            # Win32 SendInput Structures
+            INPUT_KEYBOARD = 1
+            KEYEVENTF_KEYUP = 0x0002
+
+            VK_SHIFT = 0x10
+            VK_CONTROL = 0x11
+            VK_MENU = 0x12   # Alt
+            VK_LWIN = 0x5B
+            VK_RWIN = 0x5C
+            VK_V = 0x56
+
+            class KEYBDINPUT(ctypes.Structure):
+                _fields_ = [
+                    ("wVk", wintypes.WORD),
+                    ("wScan", wintypes.WORD),
+                    ("dwFlags", wintypes.DWORD),
+                    ("time", wintypes.DWORD),
+                    ("dwExtraInfo", ctypes.POINTER(wintypes.ULONG)),
+                ]
+
+            class _INPUT_UNION(ctypes.Union):
+                _fields_ = [("ki", KEYBDINPUT)]
+
+            class INPUT(ctypes.Structure):
+                _fields_ = [
+                    ("type", wintypes.DWORD),
+                    ("u", _INPUT_UNION),
+                ]
+
+            def make_key_input(vk, flags):
+                inp = INPUT()
+                inp.type = INPUT_KEYBOARD
+                inp.u.ki.wVk = vk
+                inp.u.ki.wScan = 0
+                inp.u.ki.dwFlags = flags
+                inp.u.ki.time = 0
+                inp.u.ki.dwExtraInfo = None
+                return inp
+
+            # If target_hwnd is specified and valid, ensure it is restored to foreground
+            if target_hwnd and user32.IsWindow(target_hwnd):
+                user32.SetForegroundWindow(target_hwnd)
+                user32.BringWindowToTop(target_hwnd)
+                time.sleep(0.04)
+
+            # 1. Clear any stuck modifier keys (Shift, Ctrl, Alt, Win)
+            release_mods = [
+                make_key_input(VK_SHIFT, KEYEVENTF_KEYUP),
+                make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
+                make_key_input(VK_MENU, KEYEVENTF_KEYUP),
+                make_key_input(VK_LWIN, KEYEVENTF_KEYUP),
+                make_key_input(VK_RWIN, KEYEVENTF_KEYUP),
+            ]
+            mod_array = (INPUT * len(release_mods))(*release_mods)
+            user32.SendInput(len(release_mods), mod_array, ctypes.sizeof(INPUT))
+            time.sleep(0.02)
+
+            # 2. Fire clean atomic Ctrl+V down and up sequence via SendInput
+            paste_seq = [
+                make_key_input(VK_CONTROL, 0),
+                make_key_input(VK_V, 0),
+                make_key_input(VK_V, KEYEVENTF_KEYUP),
+                make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
+            ]
+            paste_array = (INPUT * len(paste_seq))(*paste_seq)
+            user32.SendInput(len(paste_seq), paste_array, ctypes.sizeof(INPUT))
+            return
+
+        from pynput.keyboard import Controller, Key
         kb = Controller()
         mod = Key.cmd if sys.platform == "darwin" else Key.ctrl
         kb.press(mod)
-        kb.press(KeyCode.from_vk(86))
-        kb.release(KeyCode.from_vk(86))
+        kb.press('v')
+        time.sleep(0.02)
+        kb.release('v')
         kb.release(mod)
     except Exception as e:
         print(f"Auto-paste failed: {e}")
+
 
 
 def _copy_to_clipboard(text: str) -> bool:
@@ -335,11 +474,11 @@ class SettingsDialog(QDialog):
         # API Key (for API mode)
         self.api_key_input = QLineEdit()
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.api_key_input.setPlaceholderText("sk-...")
+        self.api_key_input.setPlaceholderText("Enter API key...")
         saved_key = self.settings.value(SETTINGS_API_KEY, "")
         if saved_key:
             self.api_key_input.setText(saved_key)
-        layout.addRow("OpenAI API Key:", self.api_key_input)
+        layout.addRow("API Key:", self.api_key_input)
 
         # Local Model Size (for Local mode)
         self.model_size_combo = QComboBox()
@@ -359,11 +498,17 @@ class SettingsDialog(QDialog):
         )
         layout.addRow(self.auto_paste_check)
 
+        self.play_sounds_check = QCheckBox("Play sound on start/stop recording")
+        self.play_sounds_check.setChecked(
+            self.settings.value(SETTINGS_PLAY_SOUNDS, "true") == "true"
+        )
+        layout.addRow(self.play_sounds_check)
+
         # Global Hotkey Selection
         self.hotkey_combo = QComboBox()
-        for hk in ["Ctrl + Win", "Ctrl + Space", "Caps Lock", "F1"]:
+        for hk in SUPPORTED_HOTKEYS:
             self.hotkey_combo.addItem(hk, hk)
-        saved_hotkey = self.settings.value("global_hotkey", "Ctrl + Win")
+        saved_hotkey = self.settings.value("global_hotkey", DEFAULT_GLOBAL_HOTKEY)
         self.hotkey_combo.setCurrentText(saved_hotkey)
         layout.addRow("Global Hotkey:", self.hotkey_combo)
 
@@ -423,6 +568,10 @@ class SettingsDialog(QDialog):
             SETTINGS_AUTO_PASTE,
             "true" if self.auto_paste_check.isChecked() else "false",
         )
+        self.settings.setValue(
+            SETTINGS_PLAY_SOUNDS,
+            "true" if self.play_sounds_check.isChecked() else "false",
+        )
         self.settings.setValue("global_hotkey", self.hotkey_combo.currentText())
         self.accept()
 
@@ -460,6 +609,7 @@ class ScribeDictationWindow(QMainWindow):
         self._segments: list = []
         self._recording_started_at: Optional[float] = None
 
+        self.capsule = VoiceCapsule()
         self._setup_ui()
         self._setup_shortcuts()
         self._setup_global_hotkey()
@@ -479,6 +629,7 @@ class ScribeDictationWindow(QMainWindow):
 
         # Text display area
         self.text_display = QPlainTextEdit()
+        self.text_display.setReadOnly(True)
         self.text_display.setPlaceholderText("Transcribed text will appear here...")
         self.text_display.setMinimumHeight(180)
         layout.addWidget(self.text_display)
@@ -580,7 +731,7 @@ class ScribeDictationWindow(QMainWindow):
         )
 
     def _update_hotkey_label(self):
-        hotkey = self.settings.value("global_hotkey", "Ctrl + Win")
+        hotkey = self.settings.value("global_hotkey", DEFAULT_GLOBAL_HOTKEY)
         self.hotkey_label.setText(
             f"Global Hotkey: Hold <b>{hotkey}</b> to record, release to paste"
         )
@@ -591,26 +742,19 @@ class ScribeDictationWindow(QMainWindow):
 
         self._last_hotkey_press_time = time.time()
 
+        # If already recording, ignore repeated on_press events from holding down keys
         if self._recorder and self._recorder.is_recording:
-            self._stop_recording()
-            self._recording_mode = None
-        else:
-            self._recording_mode = "HOLD"
-            self._start_recording()
+            return
+
+        self._recording_mode = "HOLD"
+        self._start_recording()
 
     @Slot()
     def _on_global_hotkey_released(self):
-        import time
-
-        if hasattr(self, "_recording_mode") and self._recording_mode == "HOLD":
-            duration = time.time() - getattr(self, "_last_hotkey_press_time", 0.0)
-            if duration >= 0.4:
-                # Held down and released -> stop recording
-                self._stop_recording()
-                self._recording_mode = None
-            else:
-                # Short tap -> lock recording on
-                self._recording_mode = "LOCK"
+        # When hotkey is released, stop recording immediately
+        if self._recorder and self._recorder.is_recording:
+            self._stop_recording()
+            self._recording_mode = None
 
     def _setup_tray(self):
         """Create a system tray icon with quick actions."""
@@ -656,9 +800,13 @@ class ScribeDictationWindow(QMainWindow):
         self.tray_icon.show()
 
     def _on_tray_activated(self, reason):
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
             self.show()
             self.raise_()
+            self.activateWindow()
 
     def _setup_transcriber(self):
         """Initialize the transcription service from settings or env."""
@@ -678,6 +826,10 @@ class ScribeDictationWindow(QMainWindow):
 
     # ── Status ────────────────────────────────────────────────────────
 
+    def _get_recording_status_text(self) -> str:
+        hotkey = self.settings.value("global_hotkey", DEFAULT_GLOBAL_HOTKEY)
+        return f"Recording...  ({hotkey} to stop)"
+
     def _update_status(self, text: str):
         self.status_bar.showMessage(text)
 
@@ -690,7 +842,24 @@ class ScribeDictationWindow(QMainWindow):
             self._start_recording()
 
     def _start_recording(self):
+        if self._recorder and self._recorder.is_recording:
+            return
+
+        # Capture current foreground window before recording/overlay changes state
+        self._target_hwnd = None
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                fg = ctypes.windll.user32.GetForegroundWindow()
+                scribe_hwnd = int(self.winId()) if self.isVisible() else 0
+                capsule_hwnd = int(self.capsule.winId()) if self.capsule.isVisible() else 0
+                if fg and fg not in (scribe_hwnd, capsule_hwnd):
+                    self._target_hwnd = fg
+            except Exception:
+                self._target_hwnd = None
+
         _play_sound(True)
+        self.capsule.show_recording()
         device_str = self.settings.value(SETTINGS_DEVICE, "")
         device = int(device_str) if device_str and device_str != "None" else None
 
@@ -702,55 +871,63 @@ class ScribeDictationWindow(QMainWindow):
         self._recorder.start()
 
         self.record_btn.setText("\u23f9 Stop")
-        self._update_status(self.STATUS_RECORDING)
+        self._update_status(self._get_recording_status_text())
 
-        # Start silence-detection thread
-        self._silence_thread = threading.Thread(
-            target=self._auto_stop_loop, daemon=True
+        # Start background monitoring thread to feed live RMS levels to the visualizer
+        self._meter_thread = threading.Thread(
+            target=self._live_audio_meter_loop, daemon=True
         )
-        self._silence_thread.start()
+        self._meter_thread.start()
 
-    def _auto_stop_loop(self):
-        """Monitor recording for silence and auto-stop after 1.5s."""
+    def _live_audio_meter_loop(self):
+        """Monitor recording for silence (in toggle mode) and feed live audio levels to the VoiceCapsule."""
         import time
         import numpy as np
 
         silence_duration = 1.5
-        block_duration = 0.1
+        block_duration = 0.04
         blocks_for_silence = int(silence_duration / block_duration)
         silent_blocks = 0
+        is_hold = getattr(self, "_recording_mode", None) == "HOLD"
 
         while self._recorder and self._recorder.is_recording:
             time.sleep(block_duration)
+            if not self._recorder or not self._recorder.is_recording:
+                break
             with self._recorder._lock:
                 if not self._recorder._recording:
                     continue
                 latest = self._recorder._recording[-1]
                 level = float(np.sqrt(np.mean(latest**2))) if latest.size > 0 else 0.0
 
-            if level < 0.01:  # SILENCE_THRESHOLD
-                silent_blocks += 1
-                if silent_blocks >= blocks_for_silence:
-                    QMetaObject.invokeMethod(
-                        self, "_stop_recording", Qt.ConnectionType.QueuedConnection
-                    )
-                    break
-            else:
-                silent_blocks = 0
+            # Feed live level to floating capsule
+            self.capsule.update_audio_level(level)
+
+            if not is_hold:
+                if level < 0.01:  # SILENCE_THRESHOLD
+                    silent_blocks += 1
+                    if silent_blocks >= blocks_for_silence:
+                        QMetaObject.invokeMethod(
+                            self, "_stop_recording", Qt.ConnectionType.QueuedConnection
+                        )
+                        break
+                else:
+                    silent_blocks = 0
 
     def _stop_recording(self):
         if not self._recorder or not self._recorder.is_recording:
             return
 
-        _play_sound(False)
         self._recording_mode = None
-
         try:
             wav_path = self._recorder.stop()
         except RuntimeError:
+            self.capsule.hide_capsule()
             self._reset_recording_ui()
             return
 
+        _play_sound(False)
+        self.capsule.show_transcribing()
         self._reset_recording_ui()
         self._transcribe_async(wav_path)
 
@@ -765,9 +942,10 @@ class ScribeDictationWindow(QMainWindow):
         if self._transcriber is None:
             self._setup_transcriber()
             if self._transcriber is None:
+                self.capsule.hide_capsule()
                 self.text_display.appendPlainText(
                     "[Transcription failed: No API key configured. "
-                    "Set OPENAI_API_KEY environment variable or configure in Settings.]"
+                    "Configure your API Key in Settings or select Local Mode.]"
                 )
                 self._update_status(self.STATUS_IDLE)
                 return
@@ -793,36 +971,39 @@ class ScribeDictationWindow(QMainWindow):
 
     @Slot(str)
     def _on_transcription_complete(self, text: str):
+        text = text.strip()
+        if not text:
+            self.capsule.hide_capsule()
+            self._update_status(self.STATUS_IDLE)
+            return
+
+        self.capsule.show_done()
         self.text_display.appendPlainText(text)
         self._update_status(self.STATUS_DONE)
 
         # Record this recording as a timestamped segment (relative to the
         # start of the session) so it can be included in Export output.
-        if text.strip():
-            now = time.monotonic()
-            session_start = self._session_started_at or now
-            seg_start = (self._recording_started_at or now) - session_start
-            seg_end = now - session_start
-            self._segments.append(
-                Segment(
-                    start=max(seg_start, 0.0),
-                    end=max(seg_end, seg_start, 0.0),
-                    text=text,
-                )
+        now = time.monotonic()
+        session_start = self._session_started_at or now
+        seg_start = (self._recording_started_at or now) - session_start
+        seg_end = now - session_start
+        self._segments.append(
+            Segment(
+                start=max(seg_start, 0.0),
+                end=max(seg_end, seg_start, 0.0),
+                text=text,
             )
+        )
 
-        # Always place the result on the clipboard so the user can paste with
-        # Ctrl+V even when automatic pasting is disabled.
-        if text.strip():
-            _copy_to_clipboard(text)
+        # Copy to clipboard
+        _copy_to_clipboard(text)
 
-            # Auto-paste (simulate Ctrl+V into the previously-active window) is
-            # an optional, toggleable behaviour gated by the "auto_paste" setting.
-            auto_paste = self.settings.value(SETTINGS_AUTO_PASTE, "true") == "true"
-            if auto_paste:
-                from PySide6.QtCore import QTimer
-
-                QTimer.singleShot(200, _simulate_paste)
+        # Auto-paste (simulate Ctrl+V into the target / active window)
+        auto_paste = self.settings.value(SETTINGS_AUTO_PASTE, "true") == "true"
+        if auto_paste:
+            target_hwnd = getattr(self, "_target_hwnd", None)
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(150, lambda: _simulate_paste(target_hwnd))
 
     # ── Actions ───────────────────────────────────────────────────────
 

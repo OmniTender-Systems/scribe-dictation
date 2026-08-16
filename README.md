@@ -1,6 +1,8 @@
 # Scribe Dictation
 
-A cross-platform desktop dictation application. It captures microphone audio, transcribes it offline via `faster-whisper` or online via the OpenAI Whisper API, and automatically copies and pastes the result into the active window.
+A modern, privacy-focused desktop dictation application for Windows. It captures microphone audio, transcribes it offline locally via `faster-whisper` (CPU/GPU) or online via the OpenAI Whisper API, and automatically copies and pastes the result directly into your active window.
+
+[**Get Lifetime License on Gumroad (https://gumroad.com/l/eyiexi)**](https://gumroad.com/l/eyiexi)
 
 ---
 
@@ -13,26 +15,27 @@ The interface is built using **PySide6** and follows a clean, single-window desi
 | File  Help                                        |
 +───────────────────────────────────────────────────+
 |                                                   |
-|  Transcribed text will appear here...            |
+|  Transcribed text will appear here...             |
 |                                                   |
 |                                                   |
 +───────────────────────────────────────────────────+
-|  [ Mic Record ]   [ Copy Clipboard ]  [ Clear ]   |
+|  [ 🎤 Record ]   [ 📋 Copy ]   [ 🗑 Clear ]        |
 +───────────────────────────────────────────────────+
+| Global Hotkey: Hold Ctrl + Win to record, release |
 | Status: Idle / Recording... / Transcribing...      |
 +───────────────────────────────────────────────────+
 ```
 
 ### Visual Components & Spacing
-*   **Main Window**: Minimum dimensions are configured to `480x360` pixels to ensure readable text preview while staying compact.
+*   **Main Window**: Minimum dimensions configured to `480x360` pixels for compact readability.
 *   **Central Widget Layout**: A `QVBoxLayout` with `12px` margins and `8px` spacing.
-*   **Text Editor (`QPlainTextEdit`)**: Minimum height of `180px` for transcribing text.
+*   **Text Editor (`QPlainTextEdit`)**: Read-only display buffer for transcriptions.
 *   **Control Panel (`QHBoxLayout`)**:
-    *   **Record Button**: Expanding push button (`40px` minimum height) with a microphone emoji. Toggles status/recording.
-    *   **Copy Button**: Copies text to clipboard.
+    *   **Record Button**: Expanding push button (`40px` minimum height). Toggles status/recording.
+    *   **Copy Button**: Copies transcribed text to clipboard.
     *   **Clear Button**: Resets text box and status.
-*   **Status Bar**: Located at the bottom to report app states: `Idle`, `Recording... (Ctrl+Win to stop)`, `Transcribing...`, `Done`, or error messages.
-*   **System Tray Integration**: Provides background running capabilities. Closing the window minimizes the app to the system tray on platforms where supported, with context options for quick toggles, settings, and quitting.
+*   **Status Bar**: Located at the bottom to report app states: `Idle`, `Recording...`, `Transcribing...`, `Done`.
+*   **System Tray Integration**: Background running capabilities with context options for quick toggles, settings, and quitting.
 
 ---
 
@@ -43,19 +46,19 @@ The application uses `PySide6.QtCore.QSettings` for persistent configuration.
 ### Configuration Storage Paths
 *   **Windows**: Stored in the registry at:
     `HKEY_CURRENT_USER\Software\ScribeDictation\Scribe Dictation`
-*   **macOS**: Stored in the application plist file:
-    `~/Library/Preferences/com.ScribeDictation.Scribe Dictation.plist`
-*   **Linux**: Stored in the ini config:
-    `~/.config/ScribeDictation/Scribe Dictation.conf`
+*   **macOS**: `~/Library/Preferences/com.ScribeDictation.Scribe Dictation.plist`
+*   **Linux**: `~/.config/ScribeDictation/Scribe Dictation.conf`
 
 ### Configuration Keys & Settings
 | Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `use_local` | string | `"true"` | `"true"` for local offline faster-whisper transcription; `"false"` for OpenAI API. |
-| `api_key` | string | `""` | OpenAI API key (`sk-...`). Required if `use_local` is `"false"`. Falls back to the `OPENAI_API_KEY` environment variable. |
+| `api_key` | string | `""` | OpenAI API key (`sk-...`). Required if `use_local` is `"false"`. |
 | `local_model_size` | string | `"base"` | Model size for local execution (`tiny`, `base`, `small`, `medium`, `large-v3`). |
-| `audio_device` | string | `""` | Selected input device index (from PyAudio/sounddevice). Empty/Default uses system default. |
-| `auto_paste` | string | `"true"` | `"true"` to simulate `Ctrl+V` (or `Cmd+V` on macOS) to paste text after transcription completes. |
+| `audio_device` | string | `""` | Selected input device index (from sounddevice). Empty uses system default. |
+| `auto_paste` | string | `"true"` | Auto-pastes transcribed text into active cursor window. |
+| `play_sounds` | string | `"true"` | Plays tactile retro tape deck mechanical punch sounds on record start/stop. |
+| `global_hotkey` | string | `"Ctrl + Win"` | Configured global push-to-talk hotkey combination. |
 
 ---
 
