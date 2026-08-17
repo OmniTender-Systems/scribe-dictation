@@ -260,16 +260,104 @@ def _stop_global_hotkey():
         _global_hotkey_listener = None
 
 
-def _simulate_paste():
-    """Simulate Ctrl+V (Windows) / Cmd+V (macOS) to paste into active window."""
+_last_paste_time = 0.0
+
+
+def _simulate_paste(target_hwnd: Optional[int] = None):
+    """Simulate atomic Ctrl+V (Windows/Linux) / Cmd+V (macOS) to paste into active window."""
+    global _last_paste_time
+    now = time.monotonic()
+    # Debounce paste simulation within 200ms
+    if now - _last_paste_time < 0.2:
+        return
+    _last_paste_time = now
+
     try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+
+            # Win32 SendInput structures
+            INPUT_KEYBOARD = 1
+            KEYEVENTF_KEYUP = 0x0002
+
+            VK_SHIFT = 0x10
+            VK_CONTROL = 0x11
+            VK_MENU = 0x12  # Alt
+            VK_LWIN = 0x5B
+            VK_RWIN = 0x5C
+            VK_V = 0x56
+
+            class KEYBDINPUT(ctypes.Structure):
+                _fields_ = [
+                    ("wVk", wintypes.WORD),
+                    ("wScan", wintypes.WORD),
+                    ("dwFlags", wintypes.DWORD),
+                    ("time", wintypes.DWORD),
+                    ("dwExtraInfo", ctypes.POINTER(wintypes.ULONG)),
+                ]
+
+            class _INPUT_UNION(ctypes.Union):
+                _fields_ = [("ki", KEYBDINPUT)]
+
+            class INPUT(ctypes.Structure):
+                _fields_ = [
+                    ("type", wintypes.DWORD),
+                    ("u", _INPUT_UNION),
+                ]
+
+            def make_key_input(vk, flags):
+                inp = INPUT()
+                inp.type = INPUT_KEYBOARD
+                inp.u.ki.wVk = vk
+                inp.u.ki.wScan = 0
+                inp.u.ki.dwFlags = flags
+                inp.u.ki.time = 0
+                inp.u.ki.dwExtraInfo = None
+                return inp
+
+            # Restore the originally-focused window before pasting. The global
+            # hotkey listener runs without regard to window focus, and by the
+            # time transcription finishes our own window (or nothing) can be
+            # foreground, so the keystrokes land nowhere.
+            if target_hwnd and user32.IsWindow(target_hwnd):
+                user32.SetForegroundWindow(target_hwnd)
+                user32.BringWindowToTop(target_hwnd)
+                time.sleep(0.04)
+
+            # Clear any modifier keys left stuck from the global hotkey combo.
+            release_mods = [
+                make_key_input(VK_SHIFT, KEYEVENTF_KEYUP),
+                make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
+                make_key_input(VK_MENU, KEYEVENTF_KEYUP),
+                make_key_input(VK_LWIN, KEYEVENTF_KEYUP),
+                make_key_input(VK_RWIN, KEYEVENTF_KEYUP),
+            ]
+            mod_array = (INPUT * len(release_mods))(*release_mods)
+            user32.SendInput(len(release_mods), mod_array, ctypes.sizeof(INPUT))
+            time.sleep(0.02)
+
+            # Fire a clean atomic Ctrl+V down/up sequence via SendInput.
+            paste_seq = [
+                make_key_input(VK_CONTROL, 0),
+                make_key_input(VK_V, 0),
+                make_key_input(VK_V, KEYEVENTF_KEYUP),
+                make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
+            ]
+            paste_array = (INPUT * len(paste_seq))(*paste_seq)
+            user32.SendInput(len(paste_seq), paste_array, ctypes.sizeof(INPUT))
+            return
+
         from pynput.keyboard import Controller, Key
 
         kb = Controller()
         mod = Key.cmd if sys.platform == "darwin" else Key.ctrl
         kb.press(mod)
-        kb.press(KeyCode.from_vk(86))
-        kb.release(KeyCode.from_vk(86))
+        kb.press("v")
+        time.sleep(0.02)
+        kb.release("v")
         kb.release(mod)
     except Exception as e:
         print(f"Auto-paste failed: {e}")
@@ -690,6 +778,20 @@ class ScribeDictationWindow(QMainWindow):
             self._start_recording()
 
     def _start_recording(self):
+        # Capture the currently-focused window before our own UI updates
+        # steal focus, so auto-paste can restore it later.
+        self._target_hwnd = None
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                fg = ctypes.windll.user32.GetForegroundWindow()
+                own_hwnd = int(self.winId()) if self.isVisible() else 0
+                if fg and fg != own_hwnd:
+                    self._target_hwnd = fg
+            except Exception:
+                self._target_hwnd = None
+
         _play_sound(True)
         device_str = self.settings.value(SETTINGS_DEVICE, "")
         device = int(device_str) if device_str and device_str != "None" else None
@@ -822,7 +924,8 @@ class ScribeDictationWindow(QMainWindow):
             if auto_paste:
                 from PySide6.QtCore import QTimer
 
-                QTimer.singleShot(200, _simulate_paste)
+                target_hwnd = getattr(self, "_target_hwnd", None)
+                QTimer.singleShot(150, lambda: _simulate_paste(target_hwnd))
 
     # ── Actions ───────────────────────────────────────────────────────
 
