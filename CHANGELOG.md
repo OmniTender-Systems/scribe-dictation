@@ -1,9 +1,25 @@
-# Changelog
+## 2026-08-15 — Version 1.0.0 (Production Release)
+
+### Added
+- **Full Offline Local Whisper Engine**: Added offline transcription using `faster-whisper` (tiny, base, small, medium, large-v3) with zero cloud dependencies.
+- **Hardware-Locked Pro Licensing**: Machine fingerprint verification with offline cached activation and Gumroad integration.
+- **Authentic Retro Tape Recorder Acoustics**: Instant physical mechanical latch/release click audio feedback using zero-latency memory buffers.
+- **Curated Global Hotkey Presets**: Configurable hotkeys (`Ctrl + Win`, `Ctrl + Shift`, `Ctrl + Alt`, `Ctrl + Space`, `F1-F12`, `Caps Lock`) that work reliably system-wide.
+- **Export Capabilities**: Direct transcription export to `.txt`, `.md` (Markdown), and `.srt` (Subtitles).
+- **Sound Effects Toggle**: Option in Settings to toggle acoustic feedback.
+
+### Fixed
+- Fixed duplicate transcription paste bug by filtering OS key-repeat events and verifying active window focus.
+- Eliminated audio popping by transitioning to high-quality synthesized acoustic models.
+- Upgraded paste simulation with atomic debouncing to ensure single-keystroke emission into target applications.
+- Synchronized standalone distribution build with taskbar launcher.
+
+---
 
 ## 2026-07-15
 
 ### Added
-- Global hotkey (Ctrl+Shift+D), auto-paste, and system tray (#88cec80, #92589ee)
+- Global hotkey, auto-paste, and system tray (#88cec80, #92589ee)
 - Property/fuzz tests for WAV header parsing (#7)
 
 ### Fixed
@@ -13,30 +29,3 @@
 ### Docs
 - Added START_HERE.md routing back to neural-network hub (#d8f869b)
 - Added multi-agent coordination section with kanban reference (#1938f49)
-
----
-
-## 2026-07-14
-
-### Added
-- Initial project scaffold (#72ad444)
-- Audio capture module — start/stop/pause/resume with silence detection (#0216f6e)
-- Transcription service with OpenAI Whisper API integration (#cabface)
-- Core dictation application (PySide6 desktop app) (#514f467, #e6537af)
-
-### Setup
-- Added CLAUDE.md and GitHub templates (#04ed02c)
-
----
-
-## Open (2026-07-20)
-
-See [GitHub Issues](https://github.com/subtiliorars-sys/scribe-dictation/issues) — 8 open feature requests including:
-- Whisper model selection + local model support (faster-whisper)
-- Settings UI (device, model, hotkey)
-- Dictation history + search
-- Clipboard auto-paste of transcription result
-- Export transcriptions to .txt/.md/.srt
-- Signed Windows build (PyInstaller)
-- Integration tests (capture → transcribe → clipboard)
-- Pre-commit hooks (format + secret scan)

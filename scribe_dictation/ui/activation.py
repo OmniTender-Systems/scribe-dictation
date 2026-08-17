@@ -1,188 +1,179 @@
-import webbrowser
-from PySide6.QtCore import Qt, QThread, Signal, Slot
-from PySide6.QtGui import QFont
+"""
+Beautiful activation and paywall dialog for Scribe Dictation.
+Designed with rich aesthetics: dark theme, gradients, rounded corners, and clean typography.
+
+Hardened: captures machine fingerprint at activation time, passes it to LicenseService
+so the cached license is bound to this machine. Falls back to self-signed verification.
+"""
+
+import threading
+from typing import Optional
+from PySide6.QtCore import Qt, Signal, QTimer, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QPalette
 from PySide6.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QMessageBox,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QGraphicsDropShadowEffect
 )
-from scribe_dictation.licensing import verify_license_online, BUY_URL
+from scribe_dictation.licensing import LicenseService, verify_license_online
+from scribe_dictation.licensing.hardware import get_machine_fingerprint
 
-
-class ActivationWorker(QThread):
-    finished_signal = Signal(bool)
-
-    def __init__(self, license_key: str):
-        super().__init__()
-        self.license_key = license_key
-
-    def run(self):
-        success = verify_license_online(self.license_key)
-        self.finished_signal.emit(success)
+BUY_URL = "https://gumroad.com/l/eyiexi"
 
 
 class ActivationDialog(QDialog):
-    """A premium, modern dialog for user license activation."""
+    """A gorgeous activation and paywall dialog for Scribe Dictation."""
 
-    def __init__(self, parent=None):
+    activated = Signal(str, dict)
+
+    def __init__(self, parent=None, license_service: Optional[LicenseService] = None):
         super().__init__(parent)
-        self.setWindowTitle("Activate Scribe Dictation Pro")
-        self.setFixedSize(480, 260)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-
-        # Style sheet for modern premium look
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #1e1e2e;
-                color: #cdd6f4;
-                font-family: 'Segoe UI', Arial, sans-serif;
-            }
-            QLabel {
-                color: #cdd6f4;
-            }
-            QLineEdit {
-                background-color: #313244;
-                color: #cdd6f4;
-                border: 1px solid #45475a;
-                border-radius: 6px;
-                padding: 10px;
-                font-size: 14px;
-            }
-            QLineEdit:focus {
-                border: 1px solid #89b4fa;
-            }
-            QPushButton {
-                background-color: #89b4fa;
-                color: #11111b;
-                border: none;
-                border-radius: 6px;
-                padding: 10px 20px;
-                font-weight: bold;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #b4befe;
-            }
-            QPushButton:pressed {
-                background-color: #74c7ec;
-            }
-            QPushButton:disabled {
-                background-color: #585b70;
-                color: #a6adc8;
-            }
-            QPushButton#secondary {
-                background-color: #313244;
-                color: #cdd6f4;
-                border: 1px solid #45475a;
-            }
-            QPushButton#secondary:hover {
-                background-color: #45475a;
-            }
-            QPushButton#buy {
-                background-color: #a6e3a1;
-                color: #11111b;
-            }
-            QPushButton#buy:hover {
-                background-color: #94e2d5;
-            }
-        """)
-
+        self.license_service = license_service or LicenseService()
         self._setup_ui()
+        self._apply_styles()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        self.setWindowTitle("Activate Scribe Dictation")
+        self.setFixedSize(480, 420)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
 
-        # Header Title
-        title_label = QLabel("Scribe Dictation Pro")
-        title_font = QFont()
-        title_font.setPointSize(18)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title_label)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(24, 24, 24, 24)
+        main_layout.setSpacing(16)
 
-        # Subtitle instructions
-        subtitle_label = QLabel(
-            "Please enter your license key to activate the Pro version."
-        )
-        subtitle_label.setFont(QFont("Segoe UI", 10))
-        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle_label.setWordWrap(True)
-        layout.addWidget(subtitle_label)
+        self.title_label = QLabel("Scribe Dictation")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.subtitle_label = QLabel("Private, instant, AI-powered desktop dictation.")
+        self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.prompt_label = QLabel("Enter your activation key to unlock lifetime access.")
+        self.prompt_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.prompt_label.setWordWrap(True)
 
-        # License Input
-        self.license_input = QLineEdit()
-        self.license_input.setPlaceholderText("Enter your license key here...")
-        layout.addWidget(self.license_input)
+        self.key_input = QLineEdit()
+        self.key_input.setPlaceholderText("Paste your license key here...")
+        self.key_input.setFocus()
 
-        # Status & Error message label
+        self.activate_btn = QPushButton("Activate License")
+        self.activate_btn.clicked.connect(self._on_activate_clicked)
+
+        self.machine_label = QLabel("")
+        self.machine_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.machine_label.setWordWrap(True)
+
         self.status_label = QLabel("")
-        self.status_label.setFont(QFont("Segoe UI", 9))
-        self.status_label.setStyleSheet("color: #f38ba8;")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.status_label)
+        self.status_label.setWordWrap(True)
 
-        # Button Layout
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
+        bottom_layout = QHBoxLayout()
+        self.buy_btn = QPushButton("Don't have a key? Purchase one here →")
+        self.buy_btn.setFlat(True)
+        self.buy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.buy_btn.clicked.connect(self._on_buy_clicked)
+        bottom_layout.addWidget(self.buy_btn)
 
-        self.buy_btn = QPushButton("Buy Pro ($19)")
-        self.buy_btn.setObjectName("buy")
-        self.buy_btn.clicked.connect(self._open_buy_page)
-        btn_layout.addWidget(self.buy_btn)
+        main_layout.addWidget(self.title_label)
+        main_layout.addWidget(self.subtitle_label)
+        main_layout.addWidget(self.prompt_label)
+        main_layout.addWidget(self.key_input)
+        main_layout.addWidget(self.activate_btn)
+        main_layout.addWidget(self.machine_label)
+        main_layout.addWidget(self.status_label)
+        main_layout.addLayout(bottom_layout)
 
-        self.cancel_btn = QPushButton("Quit")
-        self.cancel_btn.setObjectName("secondary")
-        self.cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(self.cancel_btn)
+        main_layout.addLayout(bottom_layout)
 
-        self.activate_btn = QPushButton("Activate")
-        self.activate_btn.clicked.connect(self._start_activation)
-        btn_layout.addWidget(self.activate_btn)
+    def _apply_styles(self):
+        palette = QPalette()
+        palette.setColor(QPalette.ColorRole.Window, QColor("#121214"))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor("#F3F4F6"))
+        self.setPalette(palette)
+        self.setAutoFillBackground(True)
 
-        layout.addLayout(btn_layout)
-        self.worker = None
+        self.setStyleSheet("""
+            QDialog { background: #121214; border-radius: 12px; }
+            QLabel#title { font-size: 24px; font-weight: 700; color: #F3F4F6; }
+            QLabel#subtitle { font-size: 14px; color: #A1A1AA; margin-bottom: 8px; }
+            QLabel#prompt { font-size: 13px; color: #D4D4D8; margin-bottom: 4px; }
+            QLineEdit {
+                padding: 12px 16px; border: 1px solid #3F3F46; border-radius: 8px;
+                background: #18181B; color: #F3F4F6; font-size: 14px; letter-spacing: 0.8px;
+                selection-background-color: #8B5CF6;
+            }
+            QLineEdit:focus { border: 1px solid #8B5CF6; background: #1C1C1F; }
+            QPushButton {
+                background: #8B5CF6; color: white; border: none; border-radius: 8px;
+                padding: 12px 24px; font-size: 14px; font-weight: 600;
+            }
+            QPushButton:hover { background: #7C3AED; }
+            QPushButton:pressed { background: #6D28D9; }
+            QPushButton:disabled { background: #3F3F46; color: #71717A; }
+            QPushButton[flat="true"] {
+                background: transparent; color: #8B5CF6; font-size: 12px; font-weight: 500;
+                border: none; padding: 4px;
+            }
+            QPushButton[flat="true"]:hover { color: #A78BFA; }
+            QLabel#status_err { color: #EF4444; font-size: 12px; font-weight: 500; }
+            QLabel#status_ok { color: #10B981; font-size: 12px; font-weight: 500; }
+            QLabel#status_info { color: #3B82F6; font-size: 12px; }
+            QLabel#machine_label { color: #52525B; font-size: 10px; }
+        """)
+        self.title_label.setObjectName("title")
+        self.subtitle_label.setObjectName("subtitle")
+        self.prompt_label.setObjectName("prompt")
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 160))
+        shadow.setOffset(0, 8)
+        self.setGraphicsEffect(shadow)
 
-    def _open_buy_page(self):
-        webbrowser.open(BUY_URL)
-
-    def _start_activation(self):
-        key = self.license_input.text().strip()
+    def _on_activate_clicked(self):
+        key = self.key_input.text().strip()
         if not key:
-            self.status_label.setText("License key cannot be empty.")
+            self._set_status("Please enter a license key.", is_error=True)
             return
+        self.activate_btn.setEnabled(False)
+        self.key_input.setEnabled(False)
+        self._set_status("Verifying license key...", is_error=False, is_info=True)
+        fingerprint = get_machine_fingerprint()
+        threading.Thread(
+            target=self._verify_async, args=(key, fingerprint), daemon=True
+        ).start()
 
-        self.status_label.setStyleSheet("color: #89b4fa;")
-        self.status_label.setText("Verifying license online...")
-        self._set_controls_enabled(False)
-
-        # Launch background thread to prevent UI freezing
-        self.worker = ActivationWorker(key)
-        self.worker.finished_signal.connect(self._on_activation_finished)
-        self.worker.start()
-
-    @Slot(bool)
-    def _on_activation_finished(self, success: bool):
-        self._set_controls_enabled(True)
-        if success:
-            QMessageBox.information(
-                self, "Success", "Scribe Dictation Pro activated successfully!"
-            )
-            self.accept()
+    def _verify_async(self, key: str, fingerprint: str):
+        from scribe_dictation.licensing import cache_activation_v2
+        svc = self.license_service
+        is_valid, msg, meta = svc.verify_license_online(key, fingerprint)
+        if is_valid:
+            cache = svc.build_cache(key, fingerprint, meta)
+            cache_activation_v2(cache)
         else:
-            self.status_label.setStyleSheet("color: #f38ba8;")
-            self.status_label.setText(
-                "Invalid license key. Please check and try again."
-            )
+            # Fall back to self-signed verification
+            from scribe_dictation.licensing import verify_license_key, cache_activation
+            if verify_license_key(key):
+                is_valid = True
+                msg = "Self-signed license activated."
+                cache_activation(key)
+        QTimer.singleShot(0, lambda: self._on_verification_complete(is_valid, msg, key))
 
-    def _set_controls_enabled(self, enabled: bool):
-        self.license_input.setEnabled(enabled)
-        self.buy_btn.setEnabled(enabled)
-        self.cancel_btn.setEnabled(enabled)
-        self.activate_btn.setEnabled(enabled)
+    def _on_verification_complete(self, is_valid: bool, msg: str, key: str):
+        self.activate_btn.setEnabled(True)
+        self.key_input.setEnabled(True)
+        if is_valid:
+            self._set_status(msg, is_error=False, is_ok=True)
+            short = get_machine_fingerprint()[:12]
+            self.machine_label.setText(f"🔒 Bound to this machine ({short}…)")
+            self.machine_label.setObjectName("machine_label")
+            QTimer.singleShot(800, self.accept)
+        else:
+            self._set_status("Invalid license key. Please check and try again.", is_error=True)
+
+    def _set_status(self, text, is_error=False, is_ok=False, is_info=False):
+        self.status_label.setText(text)
+        if is_error:   self.status_label.setObjectName("status_err")
+        elif is_ok:    self.status_label.setObjectName("status_ok")
+        elif is_info:  self.status_label.setObjectName("status_info")
+        else:          self.status_label.setObjectName("")
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
+
+    def _on_buy_clicked(self):
+        QDesktopServices.openUrl(QUrl(BUY_URL))
