@@ -265,14 +265,18 @@ class AudioWaveformRibbon(QWidget):
         cy = (h / 2.0) + vertical_offset
         max_amp = (h / 2.0) * 0.82
 
+        # In capsule mode (w > 100), wave is framed on left side (x: 14 to 72)
+        wave_x0 = 14.0 if w > 100 else 0.0
+        wave_w = 58.0 if w > 100 else w
+
         points: List[QPointF] = []
-        step_x = w / (self._num_points - 1) if self._num_points > 1 else w
+        step_x = wave_w / (self._num_points - 1) if self._num_points > 1 else wave_w
 
         # Minimum idle breathing baseline amplitude
-        idle_amp = max(2.5, h * 0.09)
+        idle_amp = max(2.5, h * 0.10)
 
         for i in range(self._num_points):
-            x = i * step_x
+            x = wave_x0 + i * step_x
             norm_x = i / (self._num_points - 1) if self._num_points > 1 else 0.5
 
             # Base envelope tapering at ends (smooth transition to zero at edges)
@@ -307,9 +311,24 @@ class AudioWaveformRibbon(QWidget):
                 )
             )
 
+            # Active wave during speech or transcribing shimmer
+            transcribe_amp = (h * 0.24) if self._is_transcribing else 0.0
+            transcribe_wave = (
+                math.sin(
+                    self._phase * 3.5 * freq_multiplier
+                    + norm_x * 5.0 * math.pi
+                    + phase_offset
+                )
+                * transcribe_amp
+                * envelope
+            )
+
             # If strong speaking audio, blend from idle to active
             total_y = (
-                cy + (idle_wave * max(0.2, 1.0 - self._current_amplitude)) + active_wave
+                cy
+                + (idle_wave * max(0.2, 1.0 - self._current_amplitude))
+                + active_wave
+                + transcribe_wave
             )
             points.append(QPointF(x, total_y))
 
@@ -346,9 +365,11 @@ class AudioWaveformRibbon(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         palette = self._get_palette()
+        wave_x0 = 14.0 if w > 100 else 0.0
+        wave_w = 58.0 if w > 100 else w
 
         # ── 1. Create Linear Gradient Brush ──
-        grad = QLinearGradient(0, 0, w, 0)
+        grad = QLinearGradient(wave_x0, 0, wave_x0 + wave_w, 0)
         grad.setColorAt(0.0, palette["gradient_start"])
         grad.setColorAt(0.5, palette["gradient_mid"])
         grad.setColorAt(1.0, palette["gradient_end"])
@@ -359,8 +380,8 @@ class AudioWaveformRibbon(QWidget):
         )
 
         fill_path = QPainterPath(wave2_path)
-        fill_path.lineTo(w, h)
-        fill_path.lineTo(0, h)
+        fill_path.lineTo(wave_x0 + wave_w, h)
+        fill_path.lineTo(wave_x0, h)
         fill_path.closeSubpath()
 
         fill_grad = QLinearGradient(0, 0, 0, h)
@@ -402,75 +423,39 @@ class AudioWaveformRibbon(QWidget):
         painter.setPen(core_pen)
         painter.drawPath(wave1_path)
 
-        # ── 6. Layer 5: Resonant Bouncing Orb (Bouncing Ball + Energy Rings) ──
-        # Compute orb position riding the dynamic wave crest
+        # ── 6. Layer 5: Resonant Bouncing Orb / Purple Pac-Man ──
         if len(wave1_points) > 1:
+            cy = h / 2.0
             if self._is_transcribing:
-                # Smooth sinusoidal ping-pong bounce between left and right margins
-                bounce_factor = (math.sin(self._phase * 2.0) + 1.0) / 2.0  # 0.0 to 1.0
-                margin = 8.0
-                orb_x = margin + bounce_factor * (w - 2.0 * margin)
-                # Interpolate y coordinate along wave1_points based on orb_x
-                norm_pos = (orb_x / w) * (len(wave1_points) - 1)
-                idx_low = max(0, min(len(wave1_points) - 2, int(norm_pos)))
-                t = max(0.0, min(1.0, norm_pos - idx_low))
-                orb_y = (
-                    wave1_points[idx_low].y() * (1.0 - t)
-                    + wave1_points[idx_low + 1].y() * t
-                )
+                # Clean, direct bouncing ball traversal:
+                # Moves smoothly from the sound wave on the left across to the right and back
+                bounce_factor = (math.sin(self._phase * 2.4) + 1.0) / 2.0  # 0.0 to 1.0
+                margin_x = 18.0
+                orb_x = margin_x + bounce_factor * (w - 2.0 * margin_x)
+
+                # Natural vertical hopping bounce along the baseline:
+                hop = abs(math.sin(self._phase * 5.5)) * 4.5
+                orb_y = (cy + 1.0) - hop
             else:
                 mid_idx = len(wave1_points) // 2
                 center_pt = wave1_points[mid_idx]
                 orb_x = center_pt.x()
                 orb_y = center_pt.y()
 
-            # Dynamic bounce & pulse calculation
-            orb_base_radius = max(3.5, min(6.5, h * 0.18))
-            energy_boost = (
-                (math.sin(self._phase * 4.0) * 1.2 + 1.2)
-                if self._is_transcribing
-                else self._current_amplitude * 4.5
-            )
-            pulse = math.sin(self._phase * 3.5) * 0.8
-            orb_r = orb_base_radius + energy_boost + pulse
+            # Compact, subtle size (radius ~4.5px)
+            orb_r = max(4.0, min(5.5, h * 0.13))
 
-            # A. Concentric Resonance Shockwave Rings (Expanding Ripple when speaking or transcribing)
-            if self._current_amplitude > 0.08 or self._is_transcribing:
-                ring_strength = (
-                    0.55 if self._is_transcribing else self._current_amplitude
-                )
-                for ring_i in range(2):
-                    ring_phase = (self._phase * 2.5 + ring_i * math.pi) % (
-                        2.0 * math.pi
-                    )
-                    ring_norm = ring_phase / (2.0 * math.pi)
-                    ring_r = orb_r + ring_norm * (h * 0.38)
-                    ring_alpha = int(
-                        max(
-                            0,
-                            (1.0 - ring_norm) * min(180, ring_strength * 210),
-                        )
-                    )
-
-                    ring_pen = QPen(palette["glow_color"], 1.2)
-                    ring_color = QColor(palette["glow_color"])
-                    ring_color.setAlpha(ring_alpha)
-                    ring_pen.setColor(ring_color)
-                    painter.setPen(ring_pen)
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawEllipse(
-                        QRectF(
-                            orb_x - ring_r, orb_y - ring_r, ring_r * 2.0, ring_r * 2.0
-                        )
-                    )
-
-            # B. Outer Radiant Glow Halo for Bouncing Orb
-            halo_r = orb_r * 2.2
+            # Outer subtle glow halo
+            halo_r = orb_r * 2.0
             halo_grad = QLinearGradient(
                 orb_x - halo_r, orb_y - halo_r, orb_x + halo_r, orb_y + halo_r
             )
             halo_c1 = QColor(palette["gradient_start"])
-            halo_c1.setAlpha(int(min(160, 60 + self._current_amplitude * 140)))
+            halo_c1.setAlpha(
+                120
+                if self._is_transcribing
+                else int(min(140, 50 + self._current_amplitude * 120))
+            )
             halo_c2 = QColor(palette["gradient_end"])
             halo_c2.setAlpha(0)
             halo_grad.setColorAt(0.0, halo_c1)
@@ -481,23 +466,64 @@ class AudioWaveformRibbon(QWidget):
                 QRectF(orb_x - halo_r, orb_y - halo_r, halo_r * 2.0, halo_r * 2.0)
             )
 
-            # C. Solid Inner Resonating Orb Core with gradient
+            # Solid Body: Purple Pac-Man (when transcribing) or Glowing Orb (when listening)
             orb_grad = QLinearGradient(
                 orb_x - orb_r, orb_y - orb_r, orb_x + orb_r, orb_y + orb_r
             )
-            orb_grad.setColorAt(0.0, QColor(255, 255, 255, 245))
-            orb_grad.setColorAt(0.45, palette["gradient_start"])
+            orb_grad.setColorAt(0.0, QColor(255, 255, 255, 250))
+            orb_grad.setColorAt(0.35, palette["gradient_start"])
             orb_grad.setColorAt(1.0, palette["gradient_mid"])
             painter.setBrush(QBrush(orb_grad))
-            painter.drawEllipse(
-                QRectF(orb_x - orb_r, orb_y - orb_r, orb_r * 2.0, orb_r * 2.0)
-            )
 
-            # D. Hot Core Specular Reflection
-            spec_r = max(1.0, orb_r * 0.35)
-            spec_x = orb_x - orb_r * 0.28
-            spec_y = orb_y - orb_r * 0.28
-            painter.setBrush(QBrush(QColor(255, 255, 255, 220)))
-            painter.drawEllipse(
-                QRectF(spec_x - spec_r, spec_y - spec_r, spec_r * 2.0, spec_r * 2.0)
-            )
+            if self._is_transcribing:
+                # Pac-Man mouth chomping open and closed
+                mouth_deg = (math.sin(self._phase * 10.0) + 1.0) * 26.0
+                moving_right = math.cos(self._phase * 2.4) >= 0.0
+
+                if moving_right:
+                    start_angle = int((mouth_deg / 2.0) * 16)
+                    span_angle = int((360.0 - mouth_deg) * 16)
+                    eye_x = orb_x + orb_r * 0.08
+                    eye_y = orb_y - orb_r * 0.40
+                else:
+                    start_angle = int((180.0 + mouth_deg / 2.0) * 16)
+                    span_angle = int((360.0 - mouth_deg) * 16)
+                    eye_x = orb_x - orb_r * 0.08
+                    eye_y = orb_y - orb_r * 0.40
+
+                # Draw Purple Pac-Man pie body
+                painter.drawPie(
+                    QRectF(orb_x - orb_r, orb_y - orb_r, orb_r * 2.0, orb_r * 2.0),
+                    start_angle,
+                    span_angle,
+                )
+
+                # Cute little retro eye
+                eye_r = max(0.9, orb_r * 0.22)
+                painter.setBrush(QBrush(QColor(26, 16, 40, 230)))
+                painter.drawEllipse(
+                    QRectF(eye_x - eye_r, eye_y - eye_r, eye_r * 2.0, eye_r * 2.0)
+                )
+                # Eye specular highlight
+                pupil_r = max(0.4, eye_r * 0.45)
+                painter.setBrush(QBrush(QColor(255, 255, 255, 240)))
+                painter.drawEllipse(
+                    QRectF(
+                        eye_x - pupil_r * 0.4,
+                        eye_y - pupil_r * 0.8,
+                        pupil_r * 2.0,
+                        pupil_r * 2.0,
+                    )
+                )
+            else:
+                # Standard glowing listening orb
+                painter.drawEllipse(
+                    QRectF(orb_x - orb_r, orb_y - orb_r, orb_r * 2.0, orb_r * 2.0)
+                )
+                spec_r = max(0.8, orb_r * 0.30)
+                spec_x = orb_x - orb_r * 0.28
+                spec_y = orb_y - orb_r * 0.28
+                painter.setBrush(QBrush(QColor(255, 255, 255, 230)))
+                painter.drawEllipse(
+                    QRectF(spec_x - spec_r, spec_y - spec_r, spec_r * 2.0, spec_r * 2.0)
+                )

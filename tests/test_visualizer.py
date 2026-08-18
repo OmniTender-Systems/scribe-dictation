@@ -158,7 +158,7 @@ class TestAudioVisualizer(unittest.TestCase):
             capsule.show_transcribing()
             self.assertEqual(capsule._state, VoiceCapsule.STATE_TRANSCRIBING)
             self.assertTrue(capsule.ribbon.is_transcribing)
-            self.assertEqual(capsule.label.text(), "Transcribing...")
+            self.assertEqual(capsule.label.text(), "Processing...")
 
             # Test show_done
             capsule.show_done()

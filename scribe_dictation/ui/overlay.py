@@ -22,7 +22,7 @@ from PySide6.QtGui import (
     QFont,
     QScreen,
 )
-from PySide6.QtWidgets import QWidget, QApplication, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QWidget, QApplication, QLabel
 
 from scribe_dictation.ui.visualizer import AudioWaveformRibbon
 
@@ -81,23 +81,35 @@ class VoiceCapsule(QWidget):
         self._timer.setInterval(16)
 
     def _setup_layout(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(14, 4, 14, 4)
-        layout.setSpacing(8)
+        # Waveform ribbon widget (background visualizer layer across capsule)
+        self.ribbon = AudioWaveformRibbon(self, num_points=32, is_pro=self._is_pro)
+        self.ribbon.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
-        # Waveform ribbon widget
-        self.ribbon = AudioWaveformRibbon(self, num_points=24, is_pro=self._is_pro)
-        self.ribbon.setFixedSize(54, 32)
-        layout.addWidget(self.ribbon)
-
-        # Status text label
-        self.label = QLabel("Listening...")
+        # Status text label (floating directly in front of the ribbon)
+        self.label = QLabel("Listening...", self)
         self.label.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
         self.label.setStyleSheet("color: #f0f6fc; background: transparent;")
-        self.label.setAlignment(
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
-        )
-        layout.addWidget(self.label)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+        self._update_geometries()
+
+    def _update_geometries(self):
+        w, h = self.width(), self.height()
+        self.ribbon.setGeometry(0, 0, w, h)
+        if self._state == self.STATE_DONE:
+            self.label.setGeometry(0, 0, w, h)
+            self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        else:
+            self.label.setGeometry(78, 0, max(10, w - 88), h)
+            self.label.setAlignment(
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+            )
+        self.label.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_geometries()
 
     @property
     def is_pro(self) -> bool:
@@ -120,20 +132,26 @@ class VoiceCapsule(QWidget):
         self.ribbon.set_active(True)
         self.ribbon.show()
         self.label.setText("Listening...")
-        self.label.setStyleSheet("color: #f0f6fc; background: transparent;")
+        self.label.setStyleSheet(
+            "color: #f0f6fc; background: transparent; font-weight: 600;"
+        )
+        self._update_geometries()
         self._reposition()
         self.show()
         if not self._timer.isActive():
             self._timer.start()
 
     def show_transcribing(self):
-        """Display the capsule in quantum AI shimmer mode."""
+        """Display the capsule in quantum AI shimmer mode with orb sweeping behind text."""
         self._state = self.STATE_TRANSCRIBING
         self.ribbon.set_transcribing(True)
         self.ribbon.set_active(True)
         self.ribbon.show()
-        self.label.setText("Transcribing...")
-        self.label.setStyleSheet("color: #c084fc; background: transparent;")
+        self.label.setText("Processing...")
+        self.label.setStyleSheet(
+            "color: #e9d5ff; background: transparent; font-weight: 600;"
+        )
+        self._update_geometries()
         self._reposition()
         self.show()
         if not self._timer.isActive():
@@ -148,7 +166,7 @@ class VoiceCapsule(QWidget):
         self.label.setStyleSheet(
             "color: #4ade80; background: transparent; font-weight: bold;"
         )
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._update_geometries()
         self.update()
         QTimer.singleShot(450, self.hide_capsule)
 

@@ -230,7 +230,7 @@ def _get_tape_sounds():
 
 
 def _play_sound(start: bool):
-    """Play tactile, authentic tape recorder punch on/off sound effect."""
+    """Play a clean, subtle audio click when starting or stopping recording."""
     try:
         settings = QSettings(ORGANIZATION, APP_NAME)
         val = settings.value(SETTINGS_PLAY_SOUNDS, True)
@@ -244,9 +244,11 @@ def _play_sound(start: bool):
         if sys.platform == "win32":
             import winsound
 
-            press_wav, rel_wav = _get_tape_sounds()
-            data = press_wav if start else rel_wav
-            winsound.PlaySound(data, winsound.SND_MEMORY | winsound.SND_ASYNC)
+            freq = 1200 if start else 850
+            dur_ms = 35
+            threading.Thread(
+                target=winsound.Beep, args=(freq, dur_ms), daemon=True
+            ).start()
     except Exception as e:
         print(f"Failed to play sound: {e}")
 
