@@ -11,10 +11,15 @@ from typing import Optional
 from PySide6.QtCore import Qt, Signal, QTimer, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QPalette
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QGraphicsDropShadowEffect
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QGraphicsDropShadowEffect,
 )
-from scribe_dictation.licensing import LicenseService, verify_license_online
+from scribe_dictation.licensing import LicenseService
 from scribe_dictation.licensing.hardware import get_machine_fingerprint
 
 BUY_URL = "https://gumroad.com/l/eyiexi"
@@ -44,7 +49,9 @@ class ActivationDialog(QDialog):
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.subtitle_label = QLabel("Private, instant, AI-powered desktop dictation.")
         self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.prompt_label = QLabel("Enter your activation key to unlock lifetime access.")
+        self.prompt_label = QLabel(
+            "Enter your activation key to unlock lifetime access."
+        )
         self.prompt_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.prompt_label.setWordWrap(True)
 
@@ -140,6 +147,7 @@ class ActivationDialog(QDialog):
 
     def _verify_async(self, key: str, fingerprint: str):
         from scribe_dictation.licensing import cache_activation_v2
+
         svc = self.license_service
         is_valid, msg, meta = svc.verify_license_online(key, fingerprint)
         if is_valid:
@@ -148,6 +156,7 @@ class ActivationDialog(QDialog):
         else:
             # Fall back to self-signed verification
             from scribe_dictation.licensing import verify_license_key, cache_activation
+
             if verify_license_key(key):
                 is_valid = True
                 msg = "Self-signed license activated."
@@ -164,14 +173,20 @@ class ActivationDialog(QDialog):
             self.machine_label.setObjectName("machine_label")
             QTimer.singleShot(800, self.accept)
         else:
-            self._set_status("Invalid license key. Please check and try again.", is_error=True)
+            self._set_status(
+                "Invalid license key. Please check and try again.", is_error=True
+            )
 
     def _set_status(self, text, is_error=False, is_ok=False, is_info=False):
         self.status_label.setText(text)
-        if is_error:   self.status_label.setObjectName("status_err")
-        elif is_ok:    self.status_label.setObjectName("status_ok")
-        elif is_info:  self.status_label.setObjectName("status_info")
-        else:          self.status_label.setObjectName("")
+        if is_error:
+            self.status_label.setObjectName("status_err")
+        elif is_ok:
+            self.status_label.setObjectName("status_ok")
+        elif is_info:
+            self.status_label.setObjectName("status_info")
+        else:
+            self.status_label.setObjectName("")
         self.status_label.style().unpolish(self.status_label)
         self.status_label.style().polish(self.status_label)
 
