@@ -64,7 +64,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=os.environ.get('APPLE_CODESIGN_IDENTITY', None),
     entitlements_file=None,
-    icon='scribe_dictation/resources/icon.png',
+    icon='scribe_dictation/resources/icon.icns',
 )
 
 coll = COLLECT(
@@ -81,7 +81,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='PrivacyScribe.app',
-    icon='scribe_dictation/resources/icon.png',
+    icon='scribe_dictation/resources/icon.icns',
     bundle_identifier='com.privacyscribe.dictation',
     info_plist={
         'CFBundleName': 'PrivacyScribe',

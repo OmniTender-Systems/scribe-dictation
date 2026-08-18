@@ -8,6 +8,7 @@ dependencies = [
     "faster-whisper>=1.2.1",
     "numpy>=2.5.1",
     "openai>=2.45.0",
+    "pillow>=12.3.0",
     "pynput>=1.8.2",
     "pyperclip>=1.11.0",
     "pyside6>=6.11.1",
