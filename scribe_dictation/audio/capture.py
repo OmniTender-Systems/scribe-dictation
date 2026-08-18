@@ -17,6 +17,8 @@ import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
+from scribe_dictation.audio.vad import process_audio
+
 # Default configuration
 DEFAULT_SAMPLE_RATE = 16000  # 16 kHz — optimal for Whisper
 DEFAULT_CHANNELS = 1
@@ -86,8 +88,11 @@ class AudioRecorder:
         )
         self._stream.start()
 
-    def stop(self) -> str:
+    def stop(self, apply_vad: bool = True) -> str:
         """Stop recording and save audio to a temp WAV file.
+
+        Args:
+            apply_vad: Whether to apply VAD pre-filtering, silence trimming, and loudness normalization.
 
         Returns:
             Path to the saved WAV file.
@@ -104,6 +109,8 @@ class AudioRecorder:
             self._stream = None
 
         audio_data = self._get_audio_data()
+        if apply_vad and audio_data.size > 0:
+            audio_data = process_audio(audio_data, sample_rate=self.sample_rate)
         return self._save_wav(audio_data)
 
     def pause(self) -> None:

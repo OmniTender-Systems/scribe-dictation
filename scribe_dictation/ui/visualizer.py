@@ -404,32 +404,51 @@ class AudioWaveformRibbon(QWidget):
 
         # ── 6. Layer 5: Resonant Bouncing Orb (Bouncing Ball + Energy Rings) ──
         # Compute orb position riding the dynamic wave crest
-        mid_idx = len(wave1_points) // 2
-        if 0 <= mid_idx < len(wave1_points):
-            center_pt = wave1_points[mid_idx]
+        if len(wave1_points) > 1:
+            if self._is_transcribing:
+                # Smooth sinusoidal ping-pong bounce between left and right margins
+                bounce_factor = (math.sin(self._phase * 2.0) + 1.0) / 2.0  # 0.0 to 1.0
+                margin = 8.0
+                orb_x = margin + bounce_factor * (w - 2.0 * margin)
+                # Interpolate y coordinate along wave1_points based on orb_x
+                norm_pos = (orb_x / w) * (len(wave1_points) - 1)
+                idx_low = max(0, min(len(wave1_points) - 2, int(norm_pos)))
+                t = max(0.0, min(1.0, norm_pos - idx_low))
+                orb_y = (
+                    wave1_points[idx_low].y() * (1.0 - t)
+                    + wave1_points[idx_low + 1].y() * t
+                )
+            else:
+                mid_idx = len(wave1_points) // 2
+                center_pt = wave1_points[mid_idx]
+                orb_x = center_pt.x()
+                orb_y = center_pt.y()
 
             # Dynamic bounce & pulse calculation
-            orb_base_radius = max(3.0, min(6.5, h * 0.18))
-            energy_boost = self._current_amplitude * 4.5
+            orb_base_radius = max(3.5, min(6.5, h * 0.18))
+            energy_boost = (
+                (math.sin(self._phase * 4.0) * 1.2 + 1.2)
+                if self._is_transcribing
+                else self._current_amplitude * 4.5
+            )
             pulse = math.sin(self._phase * 3.5) * 0.8
             orb_r = orb_base_radius + energy_boost + pulse
 
-            # Vertical float offset
-            orb_x = center_pt.x()
-            orb_y = center_pt.y()
-
-            # A. Concentric Resonance Shockwave Rings (Expanding Ripple when speaking)
-            if self._current_amplitude > 0.08:
+            # A. Concentric Resonance Shockwave Rings (Expanding Ripple when speaking or transcribing)
+            if self._current_amplitude > 0.08 or self._is_transcribing:
+                ring_strength = (
+                    0.55 if self._is_transcribing else self._current_amplitude
+                )
                 for ring_i in range(2):
-                    ring_phase = (self._phase * 2.0 + ring_i * math.pi) % (
+                    ring_phase = (self._phase * 2.5 + ring_i * math.pi) % (
                         2.0 * math.pi
                     )
                     ring_norm = ring_phase / (2.0 * math.pi)
-                    ring_r = orb_r + ring_norm * (h * 0.4)
+                    ring_r = orb_r + ring_norm * (h * 0.38)
                     ring_alpha = int(
                         max(
                             0,
-                            (1.0 - ring_norm) * min(180, self._current_amplitude * 220),
+                            (1.0 - ring_norm) * min(180, ring_strength * 210),
                         )
                     )
 

@@ -1,17 +1,23 @@
-"""
-Transcription service supporting both OpenAI Whisper API and local faster-whisper.
+"""Transcription service supporting both OpenAI Whisper API and local faster-whisper.
 
 Provides:
 - TranscribeService: async transcription of WAV files
 - Automatic retry (2 attempts) on API errors (for online mode)
-- Configurable model, local model size, device, and API key
+- Configurable model, local model size, device, API key, and CustomVocabularyManager biasing
 """
+
+from __future__ import annotations
 
 import os
 from pathlib import Path
 from typing import Optional
 
 from openai import AsyncOpenAI
+import soundfile as sf
+
+from scribe_dictation.audio.vad import is_speech_present
+from scribe_dictation.transcribe.local import LocalWhisperService
+from scribe_dictation.transcribe.vocabulary import CustomVocabularyManager
 
 DEFAULT_MODEL = "whisper-1"
 DEFAULT_LOCAL_MODEL = "base"
@@ -36,15 +42,33 @@ class TranscribeService:
         local_model_size: str = DEFAULT_LOCAL_MODEL,
         local_device: str = "auto",
         local_compute_type: str = "default",
+        vocabulary_manager: Optional[CustomVocabularyManager] = None,
+        initial_prompt: Optional[str] = None,
+        language: Optional[str] = None,
+        task: str = "transcribe",
     ):
         self.use_local = use_local
         self.model = model
         self.local_model_size = local_model_size
         self.local_device = local_device
         self.local_compute_type = local_compute_type
-        self._local_model = None
+        self.vocabulary_manager = vocabulary_manager
+        self.initial_prompt = initial_prompt
+        self.language = language
+        self.task = task
 
-        if not self.use_local:
+        self._local_service: Optional[LocalWhisperService] = None
+        if self.use_local:
+            self._local_service = LocalWhisperService(
+                model_size=self.local_model_size,
+                device=self.local_device,
+                compute_type=self.local_compute_type,
+                vocabulary_manager=self.vocabulary_manager,
+                initial_prompt=self.initial_prompt,
+                language=self.language,
+                task=self.task,
+            )
+        else:
             self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
             if not self.api_key:
                 raise ValueError(
@@ -53,41 +77,57 @@ class TranscribeService:
                 )
             self._client = AsyncOpenAI(api_key=self.api_key)
 
+    @property
+    def _local_model(self):
+        """Access the underlying faster-whisper model for backward compatibility."""
+        if self._local_service is not None:
+            return self._local_service._model
+        return None
+
+    @_local_model.setter
+    def _local_model(self, model):
+        if self._local_service is not None:
+            self._local_service._model = model
+
     def _init_local_model(self):
         """Lazy load the local faster-whisper model."""
-        if self._local_model is not None:
-            return
+        if self._local_service is None:
+            self._local_service = LocalWhisperService(
+                model_size=self.local_model_size,
+                device=self.local_device,
+                compute_type=self.local_compute_type,
+                vocabulary_manager=self.vocabulary_manager,
+                initial_prompt=self.initial_prompt,
+                language=self.language,
+                task=self.task,
+            )
+        self._local_service._init_model()
 
-        from faster_whisper import WhisperModel
+    def _get_initial_prompt(self, extra_prompt: Optional[str] = None) -> Optional[str]:
+        """Compute the combined initial_prompt for OpenAI API or local transcription."""
+        base = extra_prompt if extra_prompt is not None else self.initial_prompt
+        if self.vocabulary_manager is not None:
+            prompt = self.vocabulary_manager.build_initial_prompt(base_prompt=base)
+            return prompt if prompt else None
+        return base if base else None
 
-        device = self.local_device
-        if device == "auto":
-            try:
-                import torch
-
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-            except ImportError:
-                device = "cpu"
-
-        compute_type = self.local_compute_type
-        if compute_type == "default" or compute_type == "auto":
-            compute_type = "float16" if device == "cuda" else "int8"
-
-        print(
-            f"Loading local Whisper model '{self.local_model_size}' on device '{device}' with compute type '{compute_type}'..."
-        )
-        self._local_model = WhisperModel(
-            self.local_model_size, device=device, compute_type=compute_type
-        )
-
-    async def transcribe(self, audio_path: str) -> str:
-        """Transcribe a WAV audio file.
+    async def transcribe(
+        self,
+        audio_path: str,
+        initial_prompt: Optional[str] = None,
+        language: Optional[str] = None,
+        task: Optional[str] = None,
+    ) -> str:
+        """Transcribe or translate a WAV audio file.
 
         Args:
             audio_path: Path to a WAV file.
+            initial_prompt: Optional prompt override for vocabulary biasing.
+            language: Optional language code (e.g., 'es', 'fr', 'auto') overriding instance setting.
+            task: Optional task ('transcribe' or 'translate') overriding instance setting.
 
         Returns:
-            Transcribed text.
+            Transcribed or translated text.
 
         Raises:
             TranscriptionError: If transcription fails.
@@ -96,19 +136,41 @@ class TranscribeService:
         if not path.exists():
             raise TranscriptionError(f"Audio file not found: {audio_path}")
 
+        # VAD check: if audio file contains no speech / pure silence, return empty string
+        # to avoid silence hallucinations (e.g. '[Music]', 'Thank you for watching')
+        try:
+            audio_arr, sr = sf.read(str(path), dtype="float32")
+            if audio_arr.size == 0 or not is_speech_present(audio_arr, sample_rate=sr):
+                return ""
+        except Exception:
+            # If audio cannot be decoded with soundfile (e.g. mock test payload), proceed as-is
+            pass
+
+        target_lang = language if language is not None else self.language
+        target_task = task if task is not None else self.task
+        normalized_task = (
+            "translate"
+            if target_task
+            and target_task.lower().strip() in ("translate", "translation")
+            else "transcribe"
+        )
+
         if self.use_local:
             try:
-                # Local transcription uses faster-whisper
-                self._init_local_model()
-                # Run the transcription
-                segments, info = self._local_model.transcribe(audio_path, beam_size=5)
-                text_list = [segment.text for segment in segments]
-                return "".join(text_list).strip()
+                if self._local_service is None:
+                    self._init_local_model()
+                return await self._local_service.transcribe_async(
+                    audio_path,
+                    initial_prompt=initial_prompt,
+                    language=target_lang,
+                    task=normalized_task,
+                )
             except Exception as e:
                 print(f"Local transcription failed: {e}")
                 return f"[Local transcription failed: {e}]"
 
         # Online API mode
+        prompt = self._get_initial_prompt(initial_prompt)
         last_error: Optional[Exception] = None
 
         for attempt in range(
@@ -116,11 +178,35 @@ class TranscribeService:
         ):  # 3 attempts total (initial + 2 retries)
             try:
                 with open(audio_path, "rb") as audio_file:
-                    transcript = await self._client.audio.transcriptions.create(
-                        model=self.model,
-                        file=audio_file,
-                    )
-                return transcript.text
+                    create_kwargs = {
+                        "model": self.model,
+                        "file": audio_file,
+                    }
+                    if prompt:
+                        create_kwargs["prompt"] = prompt
+
+                    if normalized_task == "translate":
+                        # OpenAI Translations API: client.audio.translations.create
+                        # Note: OpenAI translations endpoint translates directly to English
+                        transcript = await self._client.audio.translations.create(
+                            **create_kwargs
+                        )
+                    else:
+                        # OpenAI Transcriptions API: client.audio.transcriptions.create
+                        if target_lang and target_lang.lower().strip() not in (
+                            "auto",
+                            "none",
+                            "",
+                        ):
+                            create_kwargs["language"] = target_lang.lower().strip()
+                        transcript = await self._client.audio.transcriptions.create(
+                            **create_kwargs
+                        )
+
+                text = transcript.text
+                if self.vocabulary_manager is not None:
+                    text = self.vocabulary_manager.apply_replacements(text)
+                return text
 
             except Exception as e:
                 last_error = e
@@ -133,5 +219,7 @@ class TranscribeService:
         return FALLBACK_MESSAGE
 
     async def transcribe_text(self, text: str) -> str:
-        """Synchronous-like convenience: returns the input text unchanged."""
+        """Synchronous-like convenience: returns the input text with vocabulary replacements applied."""
+        if self.vocabulary_manager is not None:
+            return self.vocabulary_manager.apply_replacements(text)
         return text

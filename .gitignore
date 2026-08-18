@@ -11,3 +11,6 @@ wheels/
 
 # Audio capture temp files
 data/
+*.log
+.claude/
+.worktrees/

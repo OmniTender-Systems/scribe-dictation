@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Private Scribe — 100% Offline AI Voice Dictation",
+  "short_name": "Private Scribe",
+  "version": "1.0.0",
+  "description": "Speak freely on Chrome OS & desktop. 100% offline Whisper AI speech-to-text with global push-to-talk and instant auto-paste.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "commands": {
+    "toggle-dictation": {
+      "suggested_key": {
+        "default": "Alt+Shift+V",
+        "mac": "Alt+Shift+V"
+      },
+      "description": "Toggle Voice Dictation recording"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["offscreen/offscreen.html", "lib/*", "icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Private Scribe Settings</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="header">
+      <div class="brand">
+        <div class="brand-orb"></div>
+        <div class="brand-text">
+          <h1>Private Scribe</h1>
+          <span class="version">Chrome OS &bull; Offline AI</span>
+        </div>
+      </div>
+      <span class="status-pill active" id="status-pill">Offline Ready</span>
+    </header>
+
+    <div class="section hotkey-banner">
+      <div class="hotkey-label">Push-to-Talk Hotkey:</div>
+      <kbd class="hotkey-badge">Hold Alt + S</kbd>
+      <div class="hotkey-sub">Hold key &rarr; Speak &rarr; Release to paste</div>
+    </div>
+
+    <div class="section">
+      <label class="section-title">Whisper AI Model</label>
+      <select id="model-select" class="custom-select">
+        <option value="Xenova/whisper-tiny.en">Whisper Tiny (English, 39MB) &bull; Blazing Fast</option>
+        <option value="Xenova/whisper-base.en">Whisper Base (English, 73MB) &bull; Higher Accuracy</option>
+        <option value="Xenova/whisper-small.en">Whisper Small (English, 240MB) &bull; Studio Grade</option>
+      </select>
+      <p class="field-hint">Models are stored in local IndexedDB and run 100% offline.</p>
+    </div>
+
+    <div class="section toggles">
+      <label class="toggle-row">
+        <span>Auto-Paste into Active Field</span>
+        <input type="checkbox" id="toggle-autopaste" checked>
+      </label>
+      <label class="toggle-row">
+        <span>Retro Mechanical Click Sound</span>
+        <input type="checkbox" id="toggle-audio" checked>
+      </label>
+    </div>
+
+    <div class="section license-card">
+      <div class="license-header">
+        <span>License Status:</span>
+        <span class="license-tier" id="license-tier">Lifetime Pro Active</span>
+      </div>
+      <div class="license-input-group">
+        <input type="text" id="license-key" placeholder="Enter Gumroad License Key" class="text-input">
+        <button id="btn-activate" class="btn-primary">Activate</button>
+      </div>
+      <a href="https://omnitender.gumroad.com/l/private-scribe" target="_blank" class="buy-link">Get a Lifetime License on Gumroad &rarr;</a>
+    </div>
+
+    <footer class="footer">
+      <a href="https://github.com/subtiliorars-sys/scribe-dictation" target="_blank">Open Source (MIT)</a> &bull;
+      <span>Zero Cloud Telemetry</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

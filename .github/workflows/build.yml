@@ -1,0 +1,104 @@
+name: Build & Release Packaging
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows (.exe & Installer)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Build Windows Executable
+        run: uv run python build.py
+
+      - name: Compile InnoSetup Installer
+        uses: MinisCode/inno-setup-action@v1.2.2
+        with:
+          path: installer.iss
+        if: success()
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrivacyScribe-Windows
+          path: |
+            dist/*.exe
+            Output/*.exe
+          if-no-files-found: warn
+
+  build-macos:
+    name: Build macOS (.app & .dmg)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install create-dmg & dependencies
+        run: |
+          brew install create-dmg || true
+          uv sync --all-groups
+
+      - name: Build macOS App Bundle and DMG
+        run: uv run python build_mac.py
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrivacyScribe-macOS
+          path: |
+            dist/*.dmg
+            dist/PrivacyScribe.app
+          if-no-files-found: warn
+
+  release:
+    name: Create GitHub Release
+    needs: [build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            PrivacyScribe-Windows/*
+            PrivacyScribe-macOS/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
