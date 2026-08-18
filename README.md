@@ -1,234 +1,92 @@
-# Scribe Dictation
+# Privacy Scribe
 
-<p align="center">
-  <img src="assets/scribe-preview.png" alt="Scribe Dictation - Windows Dictation App" width="600">
-</p>
-
-<p align="center">
-  <strong>Dictate 3x faster with 100% privacy. No subscriptions. No cloud. Just works.</strong>
-</p>
-
-<p align="center">
-  <a href="https://subtiliorars-sys.gumroad.com/l/eyiexi?discount=EARLY40"><img src="https://img.shields.io/badge/Get_Private_Scribe-40%25_OFF-green" alt="Get Private Scribe"></a>
-  <a href="https://github.com/subtiliorars-sys/scribe-dictation"><img src="https://img.shields.io/badge/Star_on_GitHub-?_Stars-blue" alt="Star on GitHub"></a>
-  <a href="https://subtiliorars-sys.gumroad.com/l/eyiexi"><img src="https://img.shields.io/badge/Buy_Now-$29-success" alt="Buy Now"></a>
-</p>
+>**Fast, private desktop voice dictation.** Run Whisper locally on your machine. Hold a key, speak, and paste directly into whatever you're working on.
 
 ---
 
-## ?? The Problem
+## Why I Built This
 
-**Typing is slow. Cloud dictation compromises your privacy.**
+Most dictation tools today feel like renting a microphone. They charge $10-$20 every month, route all your raw voice audio through remote servers, and stop working when you don't have internet.
 
-You're spending hours each day typing emails, docs, code comments, and messages. Meanwhile:
+If you're writing code, typing client emails, or taking private notes, you shouldn't have to upload your voice to the cloud just to talk instead of type.
 
-- **Google Docs Voice Typing** uploads your audio to Google's servers
-- **Microsoft Dictation** sends your voice data to the cloud
-- **Otter.ai** costs $10/month and stores everything on their servers
-- **Built-in Windows dictation** is inaccurate and requires internet
-
-**There's a better way.**
-
----
-
-## ? What Is Scribe Dictation?
-
-Scribe Dictation is a **Windows desktop app** that turns your voice into text faster than you can type — with **100% privacy**, **no subscriptions**, and **zero cloud dependency**.
-
-### Key Features
-
-- ??? **100% Private Offline Mode** — Your voice never leaves your computer
-- ? **Lightning-Fast Transcription** — Real-time speech-to-text using faster-whisper
-- ?? **Optional Cloud Mode** — Bring your own OpenAI API key for maximum accuracy
-- ?? **Global Hotkey** — Works in ANY app (VS Code, Notion, Slack, email, etc.)
-- ?? **Auto-Paste** — Text appears instantly in your active window
-- ?? **One-Time Payment** — $29, lifetime access, no subscriptions
-- ??? **Windows Native** — Built with PySide6 for seamless Windows integration
+**Privacy Scribe runs entirely on your device:**
+- **Zero cloud required**: Audio is transcribed locally using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2).
+- **One shortcut anywhere**: Hold your hotkey (`Ctrl+Win`, `F8`, or `Caps Lock`), talk, and release.
+- **Auto-paste**: Pastes directly at your cursor in VS Code, Notion, Slack, Obsidian, Word, or your browser.
+- **No subscription**: Free tier for daily dictation, with an optional one-time lifetime license if you want power-user features.
 
 ---
 
-## ?? Perfect For
+## Quick Demo
 
-- **Developers** — Write code, docs, and comments 3x faster
-- **Writers & Bloggers** — Draft content without carpal tunnel
-- **Productivity Enthusiasts** — Optimize your workflow
-- **Privacy-Conscious Users** — Refuse to upload voice data to the cloud
-- **Anyone with RSI** — Reliable dictation for typing difficulties
+focus cursor --> hold hotkey --> speak --> release key --> auto-pastes!
 
 ---
 
-## ?? Quick Start
+## Getting Started
 
-### Option 1: Download the App (Easiest)
+### Option 1: Standalone Executable (Windows)
 
-**Buy Private Scribe for $29:**
-?? [https://subtiliorars-sys.gumroad.com/l/eyiexi](https://subtiliorars-sys.gumroad.com/l/eyiexi?discount=EARLY40)
+Download the latest `PrivacyScribe.exe` from the [Releases](https://github.com/subtiliorars-sys/scribe-dictation/releases) page. No setup or Python installation required.
 
-**Use code `EARLY40` for 40% off** (first 20 customers only)
+### Option 2: Run from Source
 
-Download includes:
-- `PrivateScribe.exe` — standalone Windows app (no installation required)
-- Lifetime license key
-- Free updates forever
+*** Requirements
 
-### Option 2: Run from Source (Developers)
-
-#### Prerequisites
-
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- Windows 10/11
-
-#### Installation
+- Python 3.12+
+- Windows 10/11 or macOS
 
 ```bash
-# Clone the repo
+# Clone the repository
 git clone https://github.com/subtiliorars-sys/scribe-dictation.git
 cd scribe-dictation
 
-# Install dependencies
-uv sync
+# Install dependencies using uv
+'uv sync'
+# or pip: pip install -e .
 
 # Run the app
-uv run python main.py
+uv run python -m scribe_dictation
 ```
 
 ---
 
-## ?? Documentation
-### UI Layout
+## Key Features
 
-The interface is built using **PySide6** with a clean, single-window design:
+- **Hold-to-Talk Workflow**: Audio captures while you hold the key, and stops immediately when released.
+- **Floating HUD**: A minimal, non-intrusive visualizer pill gives live acoustic feedback without stealing window focus.
+- **Model Flexibility**: Supports `base`, `small`, `medium`, and `large-v3` local Whisper weights plus optional OpenAI API mode for low-end hardware.
+- **Quick Transform Palette (Ctrl+Alt+T)**: Transform selected text into bullets, summaries, or polished prose on the fly.
 
-```
-+---------------------------------------------------+
-¦ File  Help                                        ¦
-+---------------------------------------------------¦
-¦                                                   ¦
-¦  Transcribed text will appear here...            ¦
-¦                                                   ¦
-¦                                                   ¦
-+---------------------------------------------------¦
-¦  [ ?? Mic Record ]   [ ?? Copy ]  [ ??? Clear ]   ¦
-+---------------------------------------------------¦
-¦ Status: Idle / Recording... / Transcribing...     ¦
-+---------------------------------------------------+
-```
+---
 
-### Keybindings
+## Configuration
 
-- **Global Hotkey: `Ctrl+Win`**
-  - *Hold to Talk*: Press and hold to record, release to transcribe
-  - *Tap to Toggle*: Briefly press to toggle-lock recording on/off
-
-- **App-Specific Shortcuts** (when window is focused):
-  - `Ctrl+R` — Toggle recording
-  - `Ctrl+,` — Open Settings
-  - `Ctrl+Q` — Quit app
-
-### Configuration
-
-The app uses `PySide6.QtCore.QSettings` for persistent configuration:
+Settings are saved locally via your Os configuration store:
 
 | Setting | Default | Description |
-|---------|---------|-------------|
-| `use_local` | `"true"` | `"true"` for offline mode, `"false"` for OpenAI API |
-| `api_key` | `""` | OpenAI API key (required if `use_local` is `"false"`) |
-| `local_model_size` | `"base"` | Model size: `tiny`, `base`, `small`, `medium`, `large-v3` |
-| `audio_device` | `""` | Input device index (empty = system default) |
-| `auto_paste` | `"true"` | Auto-paste transcribed text into active window |
+| :--- | :--- | :--- |
+| global_hotkey | Ctrl + Win | Shortcut to hold for dictation (F8, Caps Lock, Ctrl+Space, etc.) |
+| local_model_size | base | Local Whisper model (tiny, base, small, medium, large-v3) |
+| auto_paste | true | Automatically paste text into the active window upon release |
+| language | auto | Speech recognition language (auto-detect or fixed) |
+| task | transcribe | Transcribe speech or translate directly into English |
 
 ---
 
-## ?? GPU Acceleration (Optional)
+## Building from Source
 
-For faster transcription, enable CUDA acceleration:
-
-### Prerequisites
-
-- NVIDIA GPU (Compute Capability 5.0+)
-- CUDA Toolkit 12.x
-- cuDNN v8 or v9
-
-### Setup
-
-1. **Install CUDA Toolkit** from [NVIDIA CUDA Toolkit Archive](https://developer.nvidia.com/cuda-toolkit-archive)
-2. **Install cuDNN** from [NVIDIA cuDNN Archive](https://developer.nvidia.com/cudnn)
-3. **Install PyTorch with CUDA:**
-   ```bash
-   uv pip install torch --index-url https://download.pytorch.org/whl/cu121 --force-reinstall
-   ```
-4. **Verify CUDA:**
-   ```bash
-   uv run python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
-   ```
-5. **Run the app** and select **Local (faster-whisper) - Offline** mode in Settings
-
-If CUDA is unavailable, the app automatically falls back to CPU execution.
-
----
-
-## ?? Building from Source
-
-### Build the Executable
+To package a standalone executable:
 
 ```bash
-# Build standalone executable
 uv run python build.py
 ```
 
-Output: `dist/PrivateScribe.exe`
+Output: `dist/PrivacyScribe.exe`
 
 ---
 
-## ?? Comparison: Private Scribe vs. Alternatives
+## License
 
-| Feature | Private Scribe | Google Docs | Otter.ai | Microsoft Dictation |
-|---------|---------------|-------------|----------|---------------------|
-| **100% Offline** | ? | ? | ? | ? |
-| **One-Time Payment** | ? ($29) | ? (Free) | ? ($10/mo) | ? (Free) |
-| **Privacy First** | ? | ? | ? | ? |
-| **No Account Required** | ? | ? | ? | ? |
-| **Global Hotkey** | ? | ? | ? | ? |
-| **Auto-Paste** | ? | ? | ? | ? |
-| **Windows Native** | ? | ? | ? | ? |
-
----
-
-## ?? Contributing
-
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-1. Fork the repo
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## ?? License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
----
-
-## ?? Support
-
-If this project helps you, please consider:
-
-- ? **Starring the repo** — helps others find it
-- ?? **Sharing on Twitter** — spread the word
-- ?? **Joining the discussion** — open an issue or PR
-- ?? **Buying a license** — support development and get the app
-
-<p align="center">
-  <strong>Built with ?? for privacy-conscious developers and writers</strong>
-</p>
-
----
-
-## ?? Related Projects
-
-- **[Fleet Health Dashboard](https://github.com/subtiliorars-sys/fleet-health)** — Monitor all your services in one place
-- **[Multi-Agent Fleet Field Guide](https://subtiliorars-sys.gumroad.com/l/ixrsyx?discount=LAUNCH50)** — Scale your AI-assisted workflow
+MIT License.
