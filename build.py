@@ -35,7 +35,7 @@ def run_build():
             print("\n" + "=" * 50)
             print("BUILD SUCCESSFUL!")
             print(
-                f"Executable is located at: {os.path.abspath('dist/ScribeDictation.exe')}"
+                f"Executable is located at: {os.path.abspath('dist/PrivacyScribe.exe')}"
             )
             print("=" * 50)
         else:
