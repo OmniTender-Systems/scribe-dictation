@@ -33,11 +33,13 @@ jobs:
       - name: Build Windows Executable
         run: uv run python build.py
 
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
       - name: Compile InnoSetup Installer
-        uses: MinisCode/inno-setup-action@v1.2.2
-        with:
-          path: installer.iss
-        if: success()
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+        shell: powershell
 
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
