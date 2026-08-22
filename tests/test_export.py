@@ -10,6 +10,8 @@ from scribe_dictation.export.formats import (
     to_markdown,
     to_srt,
     to_txt,
+    to_json,
+    to_html,
 )
 from scribe_dictation.export.models import Segment, TranscriptionResult
 
@@ -185,7 +187,35 @@ class TestToSrt:
 
     def test_sequential_indices(self, sample_result):
         output = to_srt(sample_result)
-        indices = [
-            line for line in output.split("\n") if line.strip().isdigit()
-        ]
+        indices = [line for line in output.split("\n") if line.strip().isdigit()]
         assert indices == ["1", "2", "3"]
+
+
+class TestToJson:
+    def test_json_output(self, sample_result):
+        import json
+
+        output_str = to_json(sample_result)
+        data = json.loads(output_str)
+        assert data["title"] == "Test Session"
+        assert len(data["segments"]) == 3
+        assert data["segments"][0]["text"] == "Hello there."
+        assert data["segments"][0]["start"] == 0.0
+
+    def test_empty_json(self):
+        import json
+
+        result = TranscriptionResult(segments=[], title="Empty")
+        data = json.loads(to_json(result))
+        assert data["title"] == "Empty"
+        assert len(data["segments"]) == 0
+
+
+class TestToHtml:
+    def test_html_output(self, sample_result):
+        output = to_html(sample_result)
+        assert "<!DOCTYPE html>" in output
+        assert "Test Session" in output
+        assert "Hello there." in output
+        assert "[00:00:00]" in output
+        assert "[00:00:02]" in output

@@ -1,6 +1,12 @@
 """Export transcription results to plain text, Markdown, and SRT subtitles."""
 
-from scribe_dictation.export.formats import to_markdown, to_srt, to_txt
+from scribe_dictation.export.formats import (
+    to_markdown,
+    to_srt,
+    to_txt,
+    to_json,
+    to_html,
+)
 from scribe_dictation.export.models import Segment, TranscriptionResult
 
 __all__ = [
@@ -9,4 +15,6 @@ __all__ = [
     "to_txt",
     "to_markdown",
     "to_srt",
+    "to_json",
+    "to_html",
 ]

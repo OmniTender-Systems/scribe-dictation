@@ -25,7 +25,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from scribe_dictation.export import to_markdown, to_srt, to_txt
+from scribe_dictation.export import (
+    to_markdown,
+    to_srt,
+    to_txt,
+    to_json,
+    to_html,
+    TranscriptionResult,
+    Segment,
+)
+from scribe_dictation.export.formats import _format_clock
 from scribe_dictation.history.archive import ArchiveEntry, TranscriptionArchive
 
 try:
@@ -132,7 +141,7 @@ class ArchiveDialog(QDialog):
             3, QHeaderView.ResizeMode.Stretch
         )
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         splitter.addWidget(self.table)
 
@@ -165,6 +174,11 @@ class ArchiveDialog(QDialog):
         self.export_audio_btn.setEnabled(False)
         self.export_audio_btn.clicked.connect(self._export_audio)
         audio_layout.addWidget(self.export_audio_btn)
+
+        self.cut_snippet_btn = QPushButton("✂️ Cut Snippet")
+        self.cut_snippet_btn.setEnabled(False)
+        self.cut_snippet_btn.clicked.connect(self._cut_audio_snippet)
+        audio_layout.addWidget(self.cut_snippet_btn)
 
         right_layout.addWidget(self.audio_box)
 
@@ -239,15 +253,33 @@ class ArchiveDialog(QDialog):
         self._load_entries()
 
     def _on_selection_changed(self) -> None:
-        selected_rows = self.table.selectedIndexes()
-        if not selected_rows:
+        selected_ranges = self.table.selectedRanges()
+        if not selected_ranges:
             self._update_inspector(None)
+            self.export_txt_btn.setText("Export Text (.txt / .md)")
             return
 
-        row = selected_rows[0].row()
+        selected_rows = []
+        for r in selected_ranges:
+            for row in range(r.topRow(), r.bottomRow() + 1):
+                if row not in selected_rows:
+                    selected_rows.append(row)
+        selected_rows.sort()
+
+        if not selected_rows:
+            self._update_inspector(None)
+            self.export_txt_btn.setText("Export Text (.txt / .md)")
+            return
+
+        row = selected_rows[0]
         if 0 <= row < len(self.current_entries):
             entry = self.current_entries[row]
             self._update_inspector(entry)
+
+        if len(selected_rows) > 1:
+            self.export_txt_btn.setText(f"Export Selected ({len(selected_rows)} items)")
+        else:
+            self.export_txt_btn.setText("Export Text (.txt / .md)")
 
     def _update_inspector(self, entry: Optional[ArchiveEntry]) -> None:
         self.selected_entry = entry
@@ -255,6 +287,7 @@ class ArchiveDialog(QDialog):
             self.text_preview.setPlainText("")
             self.play_btn.setEnabled(False)
             self.export_audio_btn.setEnabled(False)
+            self.cut_snippet_btn.setEnabled(False)
             self.export_txt_btn.setEnabled(False)
             self.delete_btn.setEnabled(False)
             return
@@ -263,6 +296,7 @@ class ArchiveDialog(QDialog):
         has_audio = bool(entry.audio_path and os.path.exists(entry.audio_path))
         self.play_btn.setEnabled(has_audio)
         self.export_audio_btn.setEnabled(has_audio)
+        self.cut_snippet_btn.setEnabled(has_audio)
         self.export_txt_btn.setEnabled(True)
         self.delete_btn.setEnabled(True)
 
@@ -331,35 +365,52 @@ class ArchiveDialog(QDialog):
                 )
 
     def _export_text(self) -> None:
-        if not self.selected_entry:
+        selected_ranges = self.table.selectedRanges()
+        selected_rows = []
+        for r in selected_ranges:
+            for row in range(r.topRow(), r.bottomRow() + 1):
+                if row not in selected_rows:
+                    selected_rows.append(row)
+        selected_rows.sort()
+
+        if not selected_rows:
             return
 
-        default_name = f"dictation_{self.selected_entry.id[:8]}.md"
+        entries = [
+            self.current_entries[r]
+            for r in selected_rows
+            if 0 <= r < len(self.current_entries)
+        ]
+        if not entries:
+            return
+
+        if len(entries) > 1:
+            self._export_batch(entries)
+            return
+
+        # Single entry export
+        entry = entries[0]
+        default_name = f"dictation_{entry.id[:8]}.md"
         dest_path, selected_filter = QFileDialog.getSaveFileName(
             self,
             "Export Transcription Text",
             default_name,
-            "Markdown (*.md);;Plain Text (*.txt);;SRT Subtitles (*.srt)",
+            "Markdown (*.md);;Plain Text (*.txt);;SRT Subtitles (*.srt);;JSON (*.json);;HTML (*.html)",
         )
         if dest_path:
             try:
-                text = self.selected_entry.text
+                result = self._result_from_entry(entry)
+
                 if dest_path.endswith(".srt") or "SRT" in selected_filter:
-                    formatted = to_srt(
-                        [
-                            {
-                                "text": text,
-                                "start": 0.0,
-                                "end": self.selected_entry.duration or 3.0,
-                            }
-                        ]
-                    )
+                    formatted = to_srt(result)
+                elif dest_path.endswith(".json") or "JSON" in selected_filter:
+                    formatted = to_json(result)
+                elif dest_path.endswith(".html") or "HTML" in selected_filter:
+                    formatted = to_html(result)
                 elif dest_path.endswith(".md") or "Markdown" in selected_filter:
-                    formatted = to_markdown(
-                        text, title=f"Dictation {self.selected_entry.id[:8]}"
-                    )
+                    formatted = to_markdown(result)
                 else:
-                    formatted = to_txt(text)
+                    formatted = to_txt(result)
 
                 with open(dest_path, "w", encoding="utf-8") as f:
                     f.write(formatted)
@@ -372,8 +423,297 @@ class ArchiveDialog(QDialog):
                     self, "Export Failed", f"Could not export text: {e}"
                 )
 
+    def _export_batch(self, entries: list[ArchiveEntry]) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        formats_list = [
+            "Markdown (.md)",
+            "Plain Text (.txt)",
+            "SRT Subtitles (.srt)",
+            "JSON (.json)",
+            "HTML (.html)",
+        ]
+        selected_format_str, ok1 = QInputDialog.getItem(
+            self,
+            "Batch Export Format",
+            f"Select format for {len(entries)} items:",
+            formats_list,
+            0,
+            False,
+        )
+        if not ok1 or not selected_format_str:
+            return
+
+        ext = {
+            "Markdown (.md)": "md",
+            "Plain Text (.txt)": "txt",
+            "SRT Subtitles (.srt)": "srt",
+            "JSON (.json)": "json",
+            "HTML (.html)": "html",
+        }[selected_format_str]
+
+        types_list = [
+            "Separate Files in Folder",
+            "Single Combined Document",
+            "ZIP Archive (with Audio)",
+        ]
+        selected_type, ok2 = QInputDialog.getItem(
+            self,
+            "Batch Export Option",
+            "Choose export destination type:",
+            types_list,
+            0,
+            False,
+        )
+        if not ok2 or not selected_type:
+            return
+
+        if selected_type == "Separate Files in Folder":
+            dest_dir = QFileDialog.getExistingDirectory(self, "Select Export Directory")
+            if not dest_dir:
+                return
+            count = 0
+            for entry in entries:
+                try:
+                    result = self._result_from_entry(entry)
+                    formatted = self._format_result(result, ext)
+                    filename = f"dictation_{entry.id[:8]}.{ext}"
+                    with open(
+                        os.path.join(dest_dir, filename), "w", encoding="utf-8"
+                    ) as f:
+                        f.write(formatted)
+                    count += 1
+                except Exception as e:
+                    print(f"Failed to export {entry.id}: {e}")
+            QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Successfully exported {count} files to:\n{dest_dir}",
+            )
+
+        elif selected_type == "Single Combined Document":
+            default_name = f"combined_export.{ext}"
+            dest_path, _ = QFileDialog.getSaveFileName(
+                self, "Save Combined Document", default_name, f"Files (*.{ext})"
+            )
+            if not dest_path:
+                return
+            try:
+                combined_content = []
+                for entry in entries:
+                    result = self._result_from_entry(entry)
+                    combined_content.append(self._format_result(result, ext))
+
+                if ext == "md":
+                    separator = "\n\n---\n\n"
+                elif ext == "json":
+                    import json
+
+                    results_list = []
+                    for entry in entries:
+                        res = self._result_from_entry(entry)
+                        segments_list = [
+                            {"start": s.start, "end": s.end, "text": s.text}
+                            for s in res.segments
+                        ]
+                        results_list.append(
+                            {
+                                "title": res.title,
+                                "created_at": res.created_at.isoformat(),
+                                "text": res.text,
+                                "segments": segments_list,
+                            }
+                        )
+                    combined_text = json.dumps(
+                        results_list, indent=2, ensure_ascii=False
+                    )
+                elif ext == "html":
+                    bodies = []
+                    for entry in entries:
+                        res = self._result_from_entry(entry)
+                        inner_body = ""
+                        for segment in res.segments:
+                            start_str = _format_clock(segment.start)
+                            inner_body += (
+                                f'<div class="segment" style="margin-bottom: 12px; padding: 6px; border-left: 3px solid #3182ce; padding-left: 10px;">'
+                                f'<span class="time" style="color: #718096; font-family: monospace; font-size: 12px; margin-right: 10px;">[{start_str}]</span>'
+                                f'<span class="text" style="color: #2d3748; font-size: 14px;">{segment.text}</span>'
+                                f"</div>"
+                            )
+                        bodies.append(
+                            f'<div class="entry" style="margin-bottom: 40px;">'
+                            f"<h2>{res.title}</h2>"
+                            f'<div class="meta" style="font-size: 12px; color: #a0aec0; margin-bottom: 20px;">{res.created_at.strftime("%Y-%m-%d %H:%M:%S")}</div>'
+                            f'<div class="transcript">{inner_body}</div>'
+                            f"</div>"
+                        )
+                    combined_text = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Combined Export</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background-color: #f7fafc;
+            color: #2d3748;
+        }}
+        .container {{
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }}
+        h1 {{
+            color: #1a202c;
+            margin-top: 0;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }}
+        h2 {{
+            color: #2d3748;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 5px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Combined Transcription Export</h1>
+        {"<hr style='margin: 40px 0; border: 0; border-top: 1px solid #e2e8f0;'>".join(bodies)}
+    </div>
+</body>
+</html>
+"""
+                else:
+                    separator = "\n\n========================================\n\n"
+
+                if ext not in ("json", "html"):
+                    combined_text = separator.join(combined_content)
+
+                with open(dest_path, "w", encoding="utf-8") as f:
+                    f.write(combined_text)
+                QMessageBox.information(
+                    self, "Export Complete", f"Combined document saved to:\n{dest_path}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Export Failed", f"Could not create combined document: {e}"
+                )
+
+        elif selected_type == "ZIP Archive (with Audio)":
+            dest_path, _ = QFileDialog.getSaveFileName(
+                self, "Save ZIP Archive", "batch_export.zip", "ZIP Archive (*.zip)"
+            )
+            if not dest_path:
+                return
+            import zipfile
+            import tempfile
+
+            try:
+                with zipfile.ZipFile(dest_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                    for entry in entries:
+                        result = self._result_from_entry(entry)
+                        formatted = self._format_result(result, ext)
+
+                        txt_filename = f"dictation_{entry.id[:8]}.{ext}"
+                        zip_file.writestr(txt_filename, formatted)
+
+                        if entry.audio_path and os.path.exists(entry.audio_path):
+                            audio_filename = f"audio_{entry.id[:8]}.wav"
+                            with open(entry.audio_path, "rb") as f:
+                                header = f.read(10)
+                            if header.startswith(b"VAULT_ENC:"):
+                                fd, tmp = tempfile.mkstemp(suffix=".wav")
+                                os.close(fd)
+                                try:
+                                    self.archive.export_audio(entry.id, tmp)
+                                    zip_file.write(tmp, audio_filename)
+                                finally:
+                                    try:
+                                        os.remove(tmp)
+                                    except Exception:
+                                        pass
+                            else:
+                                zip_file.write(entry.audio_path, audio_filename)
+                QMessageBox.information(
+                    self, "Export Complete", f"ZIP archive saved to:\n{dest_path}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Export Failed", f"Could not create ZIP archive: {e}"
+                )
+
+    def _result_from_entry(self, entry: ArchiveEntry) -> TranscriptionResult:
+        from datetime import datetime
+
+        title = f"Dictation {entry.id[:8]}"
+        created = datetime.fromtimestamp(entry.timestamp)
+        segments = []
+        if entry.metadata and "segments" in entry.metadata:
+            for s in entry.metadata["segments"]:
+                segments.append(
+                    Segment(
+                        start=float(s.get("start", 0.0)),
+                        end=float(s.get("end", 0.0)),
+                        text=s.get("text", ""),
+                    )
+                )
+        if not segments:
+            res = TranscriptionResult.from_text(
+                entry.text, duration=entry.duration, title=title
+            )
+            object.__setattr__(res, "created_at", created)
+            return res
+        return TranscriptionResult(segments=segments, title=title, created_at=created)
+
+    def _format_result(self, result: TranscriptionResult, ext: str) -> str:
+        if ext == "srt":
+            return to_srt(result)
+        elif ext == "json":
+            return to_json(result)
+        elif ext == "html":
+            return to_html(result)
+        elif ext == "md":
+            return to_markdown(result)
+        else:
+            return to_txt(result)
+
     def _delete_entry(self) -> None:
-        if not self.selected_entry:
+        selected_ranges = self.table.selectedRanges()
+        selected_rows = []
+        for r in selected_ranges:
+            for row in range(r.topRow(), r.bottomRow() + 1):
+                if row not in selected_rows:
+                    selected_rows.append(row)
+        selected_rows.sort()
+
+        if not selected_rows:
+            return
+
+        entries = [
+            self.current_entries[r]
+            for r in selected_rows
+            if 0 <= r < len(self.current_entries)
+        ]
+        if not entries:
+            return
+
+        if len(entries) > 1:
+            reply = QMessageBox.question(
+                self,
+                "Delete Multiple Transcriptions",
+                f"Are you sure you want to permanently delete {len(entries)} selected dictations and their audio?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                for entry in entries:
+                    self.archive.delete_entry(entry.id, delete_audio_file=True)
+                self._load_entries()
             return
 
         reply = QMessageBox.question(
@@ -385,6 +725,103 @@ class ArchiveDialog(QDialog):
         if reply == QMessageBox.StandardButton.Yes:
             self.archive.delete_entry(self.selected_entry.id, delete_audio_file=True)
             self._load_entries()
+
+    def _cut_audio_snippet(self) -> None:
+        if not self.selected_entry or not self.selected_entry.audio_path:
+            return
+
+        entry = self.selected_entry
+        duration = entry.duration or 60.0
+
+        from PySide6.QtWidgets import QInputDialog
+
+        start_val, ok1 = QInputDialog.getDouble(
+            self,
+            "Cut Audio Snippet",
+            f"Enter start time in seconds (0.0 to {duration:.2f}):",
+            0.0,
+            0.0,
+            duration,
+            2,
+        )
+        if not ok1:
+            return
+
+        end_val, ok2 = QInputDialog.getDouble(
+            self,
+            "Cut Audio Snippet",
+            f"Enter end time in seconds ({start_val:.2f} to {duration:.2f}):",
+            min(start_val + 5.0, duration),
+            start_val,
+            duration,
+            2,
+        )
+        if not ok2:
+            return
+
+        if end_val <= start_val:
+            QMessageBox.warning(
+                self, "Invalid Ranges", "End time must be greater than start time."
+            )
+            return
+
+        default_name = (
+            f"snippet_{entry.id[:8]}_{int(start_val)}s_to_{int(end_val)}s.wav"
+        )
+        dest_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Cut Audio Snippet",
+            default_name,
+            "WAV Audio (*.wav)",
+        )
+        if not dest_path:
+            return
+
+        import wave
+        import tempfile
+
+        temp_src = None
+        try:
+            src_path = entry.audio_path
+            with open(src_path, "rb") as f:
+                header = f.read(10)
+            if header.startswith(b"VAULT_ENC:"):
+                fd, tmp = tempfile.mkstemp(suffix=".wav")
+                os.close(fd)
+                self.archive.export_audio(entry.id, tmp)
+                temp_src = tmp
+                src_path = tmp
+
+            with wave.open(src_path, "rb") as src:
+                params = src.getparams()
+                sample_rate = params.framerate
+
+                start_frame = int(start_val * sample_rate)
+                end_frame = int(end_val * sample_rate)
+                num_frames = end_frame - start_frame
+
+                src.setpos(start_frame)
+                frames_data = src.readframes(num_frames)
+
+            with wave.open(dest_path, "wb") as dst:
+                dst.setparams(params)
+                dst.writeframes(frames_data)
+
+            QMessageBox.information(
+                self,
+                "Snippet Extracted",
+                f"Successfully extracted {end_val - start_val:.2f}s audio snippet to:\n{dest_path}",
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Extraction Failed", f"Failed to cut snippet: {e}"
+            )
+        finally:
+            if temp_src and os.path.exists(temp_src):
+                try:
+                    os.remove(temp_src)
+                except Exception:
+                    pass
 
     def closeEvent(self, event) -> None:
         if self.player:

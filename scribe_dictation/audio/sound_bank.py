@@ -50,7 +50,9 @@ ORGANIZATION = "PrivacyScribe"
 APP_NAME = "Privacy Scribe"
 SETTINGS_PLAY_SOUNDS = "play_sounds"
 SETTINGS_SOUND_THEME = "sound_theme"
+SETTINGS_SOUND_VOLUME = "sound_volume"
 DEFAULT_SOUND_THEME = "classic_beep"
+DEFAULT_SOUND_VOLUME = 80
 
 
 @dataclass(frozen=True)
@@ -876,6 +878,42 @@ def get_theme_wav_buffers(theme_id: str) -> Tuple[bytes, bytes]:
 # ── Audio Playback Engine ─────────────────────────────────────────────────────
 
 
+def _apply_volume(wav_bytes: bytes, volume_percent: int) -> bytes:
+    """Scale the 16-bit PCM WAV samples by a volume percentage (0-100)."""
+    if volume_percent >= 100:
+        return wav_bytes
+    if volume_percent <= 0:
+        return b""
+
+    factor = volume_percent / 100.0
+    try:
+        in_buf = io.BytesIO(wav_bytes)
+        with wave.open(in_buf, "rb") as r:
+            n_channels = r.getnchannels()
+            sampwidth = r.getsampwidth()
+            framerate = r.getframerate()
+            n_frames = r.getnframes()
+            raw_frames = r.readframes(n_frames)
+
+        if sampwidth != 2:
+            return wav_bytes
+
+        count = len(raw_frames) // 2
+        samples = struct.unpack(f"<{count}h", raw_frames)
+        scaled = [int(max(-32768, min(32767, s * factor))) for s in samples]
+        new_frames = struct.pack(f"<{count}h", *scaled)
+
+        out_buf = io.BytesIO()
+        with wave.open(out_buf, "wb") as w:
+            w.setnchannels(n_channels)
+            w.setsampwidth(sampwidth)
+            w.setframerate(framerate)
+            w.writeframes(new_frames)
+        return out_buf.getvalue()
+    except Exception:
+        return wav_bytes
+
+
 def _play_wav_buffer_win32(wav_bytes: bytes):
     """Play WAV buffer asynchronously on Windows via winsound PlaySound."""
     try:
@@ -937,6 +975,7 @@ def play_sound(
     theme_id: Optional[str] = None,
     tier: Optional[str] = None,
     is_pro: Optional[bool] = None,
+    volume: Optional[int] = None,
 ):
     """
     Play the activation (start=True) or deactivation (start=False) sound.
@@ -952,6 +991,14 @@ def play_sound(
             return
         elif isinstance(val, bool) and not val:
             return
+
+        if volume is None:
+            try:
+                volume = int(
+                    settings.value(SETTINGS_SOUND_VOLUME, DEFAULT_SOUND_VOLUME)
+                )
+            except (ValueError, TypeError):
+                volume = DEFAULT_SOUND_VOLUME
 
         if not theme_id:
             theme_id = str(settings.value(SETTINGS_SOUND_THEME, DEFAULT_SOUND_THEME))
@@ -977,18 +1024,37 @@ def play_sound(
 
         start_wav, stop_wav = get_theme_wav_buffers(theme_id)
         target_wav = start_wav if start else stop_wav
+
+        target_wav = _apply_volume(target_wav, volume)
+        if not target_wav:
+            return
+
         _play_wav_buffer_crossplatform(target_wav)
     except Exception as e:
         print(f"Failed to play sound ({theme_id}): {e}")
 
 
-def preview_sound(theme_id: str, start: bool = True):
+def preview_sound(theme_id: str, start: bool = True, volume: Optional[int] = None):
     """Directly preview a sound theme (for settings dialog auditioning)."""
     try:
         if theme_id not in SOUND_THEMES:
             theme_id = DEFAULT_SOUND_THEME
         start_wav, stop_wav = get_theme_wav_buffers(theme_id)
         target_wav = start_wav if start else stop_wav
+
+        if volume is None:
+            settings = QSettings(ORGANIZATION, APP_NAME)
+            try:
+                volume = int(
+                    settings.value(SETTINGS_SOUND_VOLUME, DEFAULT_SOUND_VOLUME)
+                )
+            except (ValueError, TypeError):
+                volume = DEFAULT_SOUND_VOLUME
+
+        target_wav = _apply_volume(target_wav, volume)
+        if not target_wav:
+            return
+
         _play_wav_buffer_crossplatform(target_wav)
     except Exception as e:
         print(f"Failed to preview sound ({theme_id}): {e}")
@@ -1001,7 +1067,9 @@ __all__ = [
     "BASIC_SOUND_THEMES",
     "PRO_SOUND_THEMES",
     "DEFAULT_SOUND_THEME",
+    "DEFAULT_SOUND_VOLUME",
     "SETTINGS_SOUND_THEME",
+    "SETTINGS_SOUND_VOLUME",
     "SETTINGS_PLAY_SOUNDS",
     "get_sound_theme",
     "list_sound_themes",

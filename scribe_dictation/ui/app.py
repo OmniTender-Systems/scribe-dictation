@@ -41,12 +41,14 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QSlider,
     QStatusBar,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -56,8 +58,10 @@ from PySide6.QtWidgets import (
 from scribe_dictation.audio.capture import AudioRecorder
 from scribe_dictation.audio.sound_bank import (
     DEFAULT_SOUND_THEME,
+    DEFAULT_SOUND_VOLUME,
     FREE_SOUND_THEMES,
     SETTINGS_SOUND_THEME,
+    SETTINGS_SOUND_VOLUME,
     SOUND_THEMES,
     play_sound as _bank_play_sound,
     preview_sound as _bank_preview_sound,
@@ -104,7 +108,11 @@ from scribe_dictation.ui.transform_palette import (
 from scribe_dictation.ui.visualizer import AudioWaveformRibbon
 from scribe_dictation.ui.vocabulary_dialog import VocabularyDialog
 from scribe_dictation.ui.voice_lab_dialog import VoiceLabDialog
-from scribe_dictation.updater import CURRENT_VERSION, fetch_latest_release_info
+from scribe_dictation.updater import (
+    CURRENT_VERSION,
+    fetch_latest_release_info,
+    download_and_install_update,
+)
 
 APP_NAME = "Privacy Scribe"
 ORGANIZATION = "PrivacyScribe"
@@ -616,12 +624,46 @@ class SettingsDialog(QDialog):
         sound_layout.addWidget(self.btn_preview_stop)
         layout.addRow("Sound Theme:", sound_layout)
 
-        self.auto_update_check = QCheckBox("Automatically check for updates on startup")
+        # Volume Slider
+        volume_layout = QHBoxLayout()
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(100)
+        try:
+            saved_vol = int(
+                self.settings.value(SETTINGS_SOUND_VOLUME, DEFAULT_SOUND_VOLUME)
+            )
+        except (ValueError, TypeError):
+            saved_vol = DEFAULT_SOUND_VOLUME
+        self.volume_slider.setValue(saved_vol)
+
+        self.volume_label = QLabel(f"{saved_vol}%")
+        self.volume_slider.valueChanged.connect(
+            lambda v: self.volume_label.setText(f"{v}%")
+        )
+
+        volume_layout.addWidget(self.volume_slider)
+        volume_layout.addWidget(self.volume_label)
+        layout.addRow("Sound Volume:", volume_layout)
+
+        update_layout = QHBoxLayout()
+        self.auto_update_check = QCheckBox(
+            "Automatically download and install updates on startup"
+        )
         self.auto_update_check.setChecked(
             self.settings.value(SETTINGS_AUTO_UPDATE, "true") == "true"
         )
-        layout.addRow(self.auto_update_check)
 
+        self.btn_check_updates = QPushButton("Check for Updates Now")
+        self.btn_check_updates.clicked.connect(
+            lambda: parent._check_for_updates_manual()
+            if hasattr(parent, "_check_for_updates_manual")
+            else None
+        )
+
+        update_layout.addWidget(self.auto_update_check)
+        update_layout.addWidget(self.btn_check_updates)
+        layout.addRow("Updates:", update_layout)
         # Global Hotkey Selection
         self.hotkey_combo = QComboBox()
         for hk in SUPPORTED_HOTKEYS:
@@ -768,11 +810,13 @@ class SettingsDialog(QDialog):
 
     def _preview_start_sound(self):
         theme_id = self.sound_theme_combo.currentData() or DEFAULT_SOUND_THEME
-        _bank_preview_sound(theme_id, start=True)
+        volume = self.volume_slider.value() if hasattr(self, "volume_slider") else None
+        _bank_preview_sound(theme_id, start=True, volume=volume)
 
     def _preview_stop_sound(self):
         theme_id = self.sound_theme_combo.currentData() or DEFAULT_SOUND_THEME
-        _bank_preview_sound(theme_id, start=False)
+        volume = self.volume_slider.value() if hasattr(self, "volume_slider") else None
+        _bank_preview_sound(theme_id, start=False, volume=volume)
 
     def _save(self):
         is_pro = is_offline_cache_valid()
@@ -818,6 +862,10 @@ class SettingsDialog(QDialog):
             )
             selected_theme = DEFAULT_SOUND_THEME
         self.settings.setValue(SETTINGS_SOUND_THEME, selected_theme)
+
+        if hasattr(self, "volume_slider"):
+            self.settings.setValue(SETTINGS_SOUND_VOLUME, self.volume_slider.value())
+
         self.settings.setValue(
             SETTINGS_AUTO_UPDATE,
             "true" if self.auto_update_check.isChecked() else "false",
@@ -917,6 +965,20 @@ class ScribeDictationWindow(QMainWindow):
 
         if self.settings.value(SETTINGS_AUTO_UPDATE, "true") == "true":
             self._check_for_updates_background()
+
+        import threading
+
+        def check_local_model():
+            try:
+                from scribe_dictation.transcribe import LocalModelManager
+
+                checked, msg = LocalModelManager.run_periodic_check(self.settings)
+                if checked:
+                    print(f"[Periodic Model Check] {msg}")
+            except Exception as e:
+                print(f"[Periodic Model Check Error] {e}")
+
+        threading.Thread(target=check_local_model, daemon=True).start()
 
     def _is_menu_bar_visible(self) -> bool:
         return self.settings.value(SETTINGS_SHOW_MENU_BAR, "true") == "true"
@@ -1295,23 +1357,67 @@ class ScribeDictationWindow(QMainWindow):
                     Qt.ConnectionType.QueuedConnection,
                     Q_ARG(str, info.get("tag_name", "")),
                     Q_ARG(str, info.get("html_url", "")),
+                    Q_ARG(str, info.get("download_url", "")),
+                    Q_ARG(bool, True),
                 )
 
         threading.Thread(target=worker, daemon=True).start()
 
-    @Slot(str, str)
-    def _prompt_update_available(self, tag_name: str, url: str):
-        """Prompt user when a new release is detected."""
-        reply = QMessageBox.information(
-            self,
-            "Update Available",
-            f"🎉 A new version of Privacy Scribe ({tag_name}) is available!\n\n"
-            "Would you like to open the download page to update now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            QDesktopServices.openUrl(QUrl(url))
+    @Slot(str, str, str, bool)
+    def _prompt_update_available(
+        self, tag_name: str, url: str, download_url: str, is_auto: bool = False
+    ):
+        """Prompt user when a new release is detected or auto-install if configured."""
+        if download_url and getattr(sys, "frozen", False):
+            auto_install = (
+                is_auto and self.settings.value(SETTINGS_AUTO_UPDATE, "true") == "true"
+            )
+
+            if auto_install:
+                reply = QMessageBox.StandardButton.Yes
+            else:
+                reply = QMessageBox.information(
+                    self,
+                    "Update Available",
+                    f"🎉 A new version of Privacy Scribe ({tag_name}) is available!\n\n"
+                    "Would you like to download and install it now? The app will restart automatically.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                self._update_status("Downloading update...")
+
+                def download_worker():
+                    success = download_and_install_update(download_url)
+                    if success:
+                        QMetaObject.invokeMethod(
+                            QApplication.instance(),
+                            "quit",
+                            Qt.ConnectionType.QueuedConnection,
+                        )
+                    else:
+                        QMetaObject.invokeMethod(
+                            self,
+                            "_update_status",
+                            Qt.ConnectionType.QueuedConnection,
+                            Q_ARG(str, "Update failed."),
+                        )
+
+                threading.Thread(target=download_worker, daemon=True).start()
+        else:
+            # Fallback for source code mode or no direct asset
+            if not is_auto:
+                reply = QMessageBox.information(
+                    self,
+                    "Update Available",
+                    f"🎉 A new version of Privacy Scribe ({tag_name}) is available!\n\n"
+                    "Would you like to open the download page to update now?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes,
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    QDesktopServices.openUrl(QUrl(url))
 
     def _check_for_updates_manual(self):
         """Manual update check triggered by user."""
@@ -1326,6 +1432,8 @@ class ScribeDictationWindow(QMainWindow):
                     Qt.ConnectionType.QueuedConnection,
                     Q_ARG(str, info.get("tag_name", "")),
                     Q_ARG(str, info.get("html_url", "")),
+                    Q_ARG(str, info.get("download_url", "")),
+                    Q_ARG(bool, False),
                 )
             else:
                 QMetaObject.invokeMethod(

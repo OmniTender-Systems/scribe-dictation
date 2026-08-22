@@ -248,3 +248,53 @@ class LocalWhisperService:
             task=task,
             **kwargs,
         )
+
+
+class LocalModelManager:
+    """Manages downloading, updating, and caching state of local Whisper models."""
+
+    @staticmethod
+    def is_model_cached(model_size: str) -> bool:
+        """Check if a model size is fully downloaded and cached locally."""
+        from faster_whisper import download_model
+
+        try:
+            download_model(model_size, local_files_only=True)
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def download_or_update(model_size: str) -> str:
+        """Download or update the specified Whisper model from Hugging Face."""
+        from faster_whisper import download_model
+
+        return download_model(model_size, local_files_only=False)
+
+    @staticmethod
+    def run_periodic_check(settings) -> tuple[bool, str]:
+        """Perform a check for local model updates if periodic time has elapsed (e.g. 30 days).
+
+        Returns (checked, msg).
+        """
+        import time
+
+        last_check_str = settings.value("last_local_model_update_check", "")
+        now = time.time()
+
+        if last_check_str:
+            try:
+                last_check = float(last_check_str)
+                if now - last_check < 30 * 86400:
+                    return False, "Periodic check not due yet."
+            except ValueError:
+                pass
+
+        settings.setValue("last_local_model_update_check", str(now))
+        model_size = settings.value("local_model_size", "base")
+
+        try:
+            LocalModelManager.download_or_update(model_size)
+            return True, f"Successfully verified/updated local model '{model_size}'."
+        except Exception as e:
+            return True, f"Failed to verify/update model: {e}"

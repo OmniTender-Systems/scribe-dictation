@@ -42,9 +42,15 @@ Stage only files YOU changed. Never `git add -A` / `git add .` / `commit -a`.
 Unexplained dirty/untracked files: leave them, tell the owner.
 Before pushing a shared branch: `git pull --rebase`; never force-push.
 
-## Deploy
-Desktop app — distributable via PyInstaller or similar. Not configured yet.
+## Deploy / Release Automation
+The GitHub Actions CI/CD pipeline handles compiling the PyInstaller executable, running Inno Setup (`ISCC`), and publishing the final Windows/macOS `.exe`/`.dmg` artifacts to GitHub Releases.
 
+**AGENT INSTRUCTION:** Whenever a new feature or fix is completed and the user requests a deployment/release/update to be rolled out, YOU MUST run the automated release script:
+```powershell
+.\release.ps1 <new_version_number>
+```
+Example: `.\release.ps1 1.2.0`
+This script synchronizes the version in `pyproject.toml`, `updater.py`, and `installer.iss`, commits the changes, generates the git tag, and pushes to GitHub to trigger the automated CI release. Never prompt the user to do this manually.
 ## Test / Verify
 ```bash
 # Lint

@@ -11,7 +11,7 @@ from scribe_dictation.transcribe.languages import (
     normalize_language_param,
     normalize_task_param,
 )
-from scribe_dictation.transcribe.local import LocalWhisperService
+from scribe_dictation.transcribe.local import LocalWhisperService, LocalModelManager
 from scribe_dictation.transcribe.service import (
     FALLBACK_MESSAGE,
     MAX_RETRIES,
@@ -30,6 +30,7 @@ __all__ = [
     "TranscribeService",
     "TranscriptionError",
     "LocalWhisperService",
+    "LocalModelManager",
     "CustomVocabularyManager",
     "ReplacementRule",
     "build_initial_prompt",

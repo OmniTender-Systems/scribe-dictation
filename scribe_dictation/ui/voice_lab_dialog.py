@@ -1,10 +1,13 @@
-"""Voice Calibration Wizard & Accuracy Lab Dialog for Privacy Scribe Pro."""
+"""Voice Calibration Wizard, Accuracy Training Library, and Local Model Manager Dialog."""
 
 from __future__ import annotations
 
+import os
+import time
 from typing import Optional
 
-from PySide6.QtCore import QThread, Signal, Slot
+import numpy as np
+from PySide6.QtCore import QThread, Signal, Slot, Qt, QSettings
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -16,6 +19,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTextEdit,
     QVBoxLayout,
+    QTabWidget,
+    QWidget,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
+    QProgressBar,
 )
 
 from scribe_dictation.audio.capture import AudioRecorder
@@ -24,6 +33,18 @@ from scribe_dictation.tuning.voice_lab import (
     CalibrationResult,
     VoiceCalibrationRunner,
 )
+from scribe_dictation.tuning.diff_learner import DiffLearner
+from scribe_dictation.history.archive import TranscriptionArchive
+from scribe_dictation.transcribe import CustomVocabularyManager, LocalModelManager
+
+
+TRAINING_PROMPTS = [
+    "The quick brown fox jumps over the lazy dog.",
+    "Acoustic models adapt to unique accents and speech patterns.",
+    "Privacy Scribe processes dictation securely and privately on my local computer.",
+    "Python is an interpreted, high-level, general-purpose programming language.",
+    "The software uses local offline whisper models for high accuracy speech recognition.",
+]
 
 
 class CalibrationWorker(QThread):
@@ -54,10 +75,139 @@ class CalibrationWorker(QThread):
             self.error_signal.emit(str(e))
 
 
-class VoiceLabDialog(QDialog):
-    """Guided Voice Calibration Wizard for Privacy Scribe."""
+class ModelDownloadWorker(QThread):
+    """Background worker for downloading/updating local Whisper models."""
 
-    calibration_applied = Signal(object)  # Emits CalibrationResult when applied
+    finished_signal = Signal(bool, str)
+    status_signal = Signal(str)
+
+    def __init__(self, model_size: str) -> None:
+        super().__init__()
+        self.model_size = model_size
+
+    def run(self) -> None:
+        try:
+            self.status_signal.emit(
+                f"Downloading/Updating '{self.model_size}' model..."
+            )
+            path = LocalModelManager.download_or_update(self.model_size)
+            self.finished_signal.emit(True, f"Model downloaded successfully to {path}")
+        except Exception as e:
+            self.finished_signal.emit(False, str(e))
+
+
+class TrainingWorker(QThread):
+    """Background worker for training the model (transcribing, running diff learner, acoustic calibration)."""
+
+    finished_signal = Signal(
+        int, float, float, float
+    )  # rules_count, silence_thresh, silence_timeout, gain
+    error_signal = Signal(str)
+    status_signal = Signal(str)
+
+    def __init__(self, archive, vocab_manager, diff_learner, calibration_runner):
+        super().__init__()
+        self.archive = archive
+        self.vocab_manager = vocab_manager
+        self.diff_learner = diff_learner
+        self.calibration_runner = calibration_runner
+
+    def run(self) -> None:
+        try:
+            self.status_signal.emit("Fetching training library entries...")
+            entries = self.archive.search(tag="training", limit=50)
+            if not entries:
+                self.error_signal.emit(
+                    "No training samples found in your library. Record some samples first."
+                )
+                return
+
+            # Initialize local whisper model for transcribing training audio
+            from scribe_dictation.transcribe.local import LocalWhisperService
+
+            model_size = self.vocab_manager.settings.value("local_model_size", "base")
+            self.status_signal.emit(f"Initializing local model '{model_size}'...")
+            service = LocalWhisperService(model_size=model_size)
+
+            learned_rules_count = 0
+            all_rms = []
+            all_peak = []
+            all_noise = []
+            all_snr = []
+
+            for idx, entry in enumerate(entries, 1):
+                if not entry.audio_path or not os.path.exists(entry.audio_path):
+                    continue
+
+                self.status_signal.emit(f"Processing sample {idx}/{len(entries)}...")
+                import tempfile
+
+                temp_src = None
+                src_path = entry.audio_path
+                with open(src_path, "rb") as f:
+                    header = f.read(10)
+                if header.startswith(b"VAULT_ENC:"):
+                    fd, tmp = tempfile.mkstemp(suffix=".wav")
+                    os.close(fd)
+                    self.archive.export_audio(entry.id, tmp)
+                    temp_src = tmp
+                    src_path = tmp
+
+                try:
+                    raw_tx = service.transcribe(src_path)
+                    suggestions = self.diff_learner.extract_replacements(
+                        raw_tx, entry.text
+                    )
+                    if suggestions:
+                        added = self.diff_learner.apply_to_vocabulary(
+                            suggestions,
+                            self.vocab_manager,
+                            min_confidence=0.5,
+                            save=False,
+                        )
+                        learned_rules_count += len(added)
+
+                    cal_res = self.calibration_runner.analyze_file(src_path)
+                    all_rms.append(cal_res.average_rms)
+                    all_peak.append(cal_res.peak_amplitude)
+                    all_noise.append(cal_res.noise_floor_rms)
+                    all_snr.append(cal_res.snr_db)
+                finally:
+                    if temp_src and os.path.exists(temp_src):
+                        try:
+                            os.remove(temp_src)
+                        except Exception:
+                            pass
+
+            self.status_signal.emit("Saving learned profile parameters...")
+            self.vocab_manager.save()
+
+            avg_noise = sum(all_noise) / len(all_noise) if all_noise else 0.005
+            avg_peak = sum(all_peak) / len(all_peak) if all_peak else 0.2
+
+            recommended_threshold = float(np.clip(avg_noise * 1.8 + 0.002, 0.005, 0.08))
+            recommended_timeout = 1.5
+            if all_snr:
+                recommended_timeout = 1.5
+
+            recommended_gain = 1.0
+            if avg_peak > 0.01:
+                recommended_gain = float(np.clip(0.75 / avg_peak, 0.5, 3.5))
+
+            self.finished_signal.emit(
+                learned_rules_count,
+                recommended_threshold,
+                recommended_timeout,
+                recommended_gain,
+            )
+        except Exception as e:
+            self.error_signal.emit(str(e))
+
+
+class VoiceLabDialog(QDialog):
+    """Voice Calibration, Training, and Local Model Manager Dialog."""
+
+    calibration_applied = Signal(object)
 
     def __init__(
         self, parent=None, runner: Optional[VoiceCalibrationRunner] = None
@@ -70,22 +220,72 @@ class VoiceLabDialog(QDialog):
         self.recorded_file: Optional[str] = None
         self.latest_result: Optional[CalibrationResult] = None
         self._worker: Optional[CalibrationWorker] = None
+        self._download_worker: Optional[ModelDownloadWorker] = None
+        self._training_worker: Optional[TrainingWorker] = None
+
+        # Try to resolve dependencies from parent
+        self.settings = None
+        self.archive = None
+        self.vocab_manager = None
+        self.diff_learner = None
+
+        if parent:
+            self.settings = getattr(parent, "settings", None)
+            self.archive = getattr(parent, "archive", None)
+            self.vocab_manager = getattr(parent, "vocabulary_manager", None)
+            self.diff_learner = getattr(parent, "diff_learner", None)
+
+        if not self.settings:
+            self.settings = QSettings("PrivacyScribe", "Privacy Scribe")
+        if not self.archive:
+            self.archive = TranscriptionArchive()
+        if not self.vocab_manager:
+            self.vocab_manager = CustomVocabularyManager(settings=self.settings)
+        if not self.diff_learner:
+            self.diff_learner = DiffLearner()
 
         self.setWindowTitle("Voice Lab & Accuracy Calibration — Privacy Scribe Pro")
-        self.setMinimumSize(640, 560)
-        self.resize(700, 600)
+        self.setMinimumSize(750, 620)
+        self.resize(800, 650)
 
         self._setup_ui()
         self._load_sentence(0)
+        self._refresh_training_library()
+        self._refresh_model_cache_status()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        # Header
+        # Tab Widget
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+
+        # Tab 1: Acoustic Calibration
+        self.tabs.addTab(self._create_calibration_tab(), "🎙️ Acoustic Calibration")
+
+        # Tab 2: Voice Training Library
+        self.tabs.addTab(self._create_training_tab(), "📚 Voice Training Library")
+
+        # Tab 3: Model Manager
+        self.tabs.addTab(self._create_model_tab(), "⚙️ Local Model Manager")
+
+        # Close Row
+        close_layout = QHBoxLayout()
+        close_layout.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        close_layout.addWidget(close_btn)
+        layout.addLayout(close_layout)
+
+    def _create_calibration_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(12)
+
         header = QLabel(
-            "<b>🎙️ Voice Calibration Wizard & Accuracy Lab</b><br>"
+            "<b>🎙️ Acoustic Calibration Wizard</b><br>"
             "<span style='color: #718096; font-size: 11px;'>"
             "Read the phonetically balanced calibration sentence below to measure speaking speed (WPM), "
             "vocal amplitude, signal-to-noise ratio, and calibrate optimal microphone silence thresholds."
@@ -94,7 +294,6 @@ class VoiceLabDialog(QDialog):
         header.setWordWrap(True)
         layout.addWidget(header)
 
-        # Sentence Selector & Target Info
         selector_layout = QHBoxLayout()
         selector_layout.addWidget(QLabel("Calibration Target:"))
         self.sentence_combo = QComboBox()
@@ -104,7 +303,6 @@ class VoiceLabDialog(QDialog):
         selector_layout.addWidget(self.sentence_combo)
         layout.addLayout(selector_layout)
 
-        # Prompt Box
         prompt_group = QGroupBox("Reading Prompt")
         prompt_layout = QVBoxLayout(prompt_group)
         self.prompt_display = QTextEdit()
@@ -123,7 +321,6 @@ class VoiceLabDialog(QDialog):
         prompt_layout.addWidget(self.phoneme_label)
         layout.addWidget(prompt_group)
 
-        # Recording Controls
         rec_layout = QHBoxLayout()
         self.record_btn = QPushButton("🔴 Start Calibration Recording")
         self.record_btn.setStyleSheet(
@@ -138,7 +335,6 @@ class VoiceLabDialog(QDialog):
         rec_layout.addWidget(self.status_label)
         layout.addLayout(rec_layout)
 
-        # Metrics Card
         metrics_group = QGroupBox("Diagnostic Results & Acoustic Profile")
         self.metrics_layout = QGridLayout(metrics_group)
         self.metrics_layout.setSpacing(10)
@@ -159,7 +355,6 @@ class VoiceLabDialog(QDialog):
 
         layout.addWidget(metrics_group)
 
-        # Feedback & Diagnostics Notes
         self.feedback_box = QTextEdit()
         self.feedback_box.setReadOnly(True)
         self.feedback_box.setFixedHeight(80)
@@ -171,7 +366,6 @@ class VoiceLabDialog(QDialog):
         )
         layout.addWidget(self.feedback_box)
 
-        # Action Buttons
         btn_layout = QHBoxLayout()
         self.apply_btn = QPushButton("✨ Apply Calibrated Settings")
         self.apply_btn.setEnabled(False)
@@ -180,14 +374,142 @@ class VoiceLabDialog(QDialog):
             "QPushButton:hover { background-color: #2b6cb0; }"
         )
         self.apply_btn.clicked.connect(self._apply_settings)
-
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.close)
-
         btn_layout.addStretch()
         btn_layout.addWidget(self.apply_btn)
-        btn_layout.addWidget(close_btn)
         layout.addLayout(btn_layout)
+
+        return widget
+
+    def _create_training_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(10)
+
+        header = QLabel(
+            "<b>📚 Voice Training Library</b><br>"
+            "<span style='color: #718096; font-size: 11px;'>"
+            "Record diverse training samples to adapt Scribe to your unique voice, accent, and vocabulary. "
+            "Running profile adaptation trains the local dictionary and acoustic gating profile privately."
+            "</span>"
+        )
+        header.setWordWrap(True)
+        layout.addWidget(header)
+
+        # Training Prompts list
+        prompts_group = QGroupBox("Select Training prompt to record:")
+        prompts_layout = QVBoxLayout(prompts_group)
+        self.train_prompt_combo = QComboBox()
+        for idx, p in enumerate(TRAINING_PROMPTS, 1):
+            self.train_prompt_combo.addItem(f"Prompt #{idx}: {p[:60]}...", p)
+        prompts_layout.addWidget(self.train_prompt_combo)
+
+        # Record Sample Button
+        rec_row = QHBoxLayout()
+        self.train_record_btn = QPushButton("🎙️ Record Training Sample")
+        self.train_record_btn.setStyleSheet("font-weight: bold; padding: 8px;")
+        self.train_record_btn.clicked.connect(self._toggle_training_recording)
+        rec_row.addWidget(self.train_record_btn)
+        self.train_rec_status = QLabel("Ready.")
+        rec_row.addWidget(self.train_rec_status)
+        prompts_layout.addLayout(rec_row)
+        layout.addWidget(prompts_group)
+
+        # Table of training clips
+        self.train_table = QTableWidget()
+        self.train_table.setColumnCount(3)
+        self.train_table.setHorizontalHeaderLabels(
+            ["Recorded Date", "Audio snippet", "Transcript (double-click to edit)"]
+        )
+        self.train_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.train_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.train_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
+        self.train_table.itemChanged.connect(self._on_training_item_edited)
+        layout.addWidget(self.train_table)
+
+        # Training action buttons
+        actions_layout = QHBoxLayout()
+        self.run_training_btn = QPushButton("⚙️ Run Profile Adaptation Training")
+        self.run_training_btn.setStyleSheet(
+            "QPushButton { background-color: #2b6cb0; color: white; font-weight: bold; padding: 8px; border-radius: 6px; }"
+            "QPushButton:hover { background-color: #2b6cb0; }"
+        )
+        self.run_training_btn.clicked.connect(self._run_adaptation_training)
+        actions_layout.addWidget(self.run_training_btn)
+
+        self.clear_training_btn = QPushButton("Clear Library")
+        self.clear_training_btn.clicked.connect(self._clear_training_library)
+        actions_layout.addWidget(self.clear_training_btn)
+
+        layout.addLayout(actions_layout)
+
+        # Progress bar/label
+        self.training_progress_label = QLabel("")
+        self.training_progress_label.setStyleSheet("color: #2b6cb0; font-weight: bold;")
+        layout.addWidget(self.training_progress_label)
+
+        return widget
+
+    def _create_model_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(12)
+
+        header = QLabel(
+            "<b>⚙️ Local Offline model Manager & Updater</b><br>"
+            "<span style='color: #718096; font-size: 11px;'>"
+            "Check local download status and pull the latest open-source Whisper model files from Hugging Face Hub. "
+            "Updating ensures compatibility and patches acoustic decoder updates."
+            "</span>"
+        )
+        header.setWordWrap(True)
+        layout.addWidget(header)
+
+        # Model selection grid
+        self.model_table = QTableWidget()
+        self.model_table.setColumnCount(3)
+        self.model_table.setHorizontalHeaderLabels(
+            ["Model Size", "Description", "Download Status"]
+        )
+        self.model_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.model_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
+        self.model_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.ResizeToContents
+        )
+        layout.addWidget(self.model_table)
+
+        # Actions
+        actions_row = QHBoxLayout()
+        self.download_model_btn = QPushButton("📥 Download / Update Selected Model")
+        self.download_model_btn.setStyleSheet("font-weight: bold; padding: 8px;")
+        self.download_model_btn.clicked.connect(self._download_selected_model)
+        actions_row.addWidget(self.download_model_btn)
+
+        self.check_model_updates_btn = QPushButton("🔄 Check for Updates")
+        self.check_model_updates_btn.clicked.connect(self._refresh_model_cache_status)
+        actions_row.addWidget(self.check_model_updates_btn)
+        layout.addLayout(actions_row)
+
+        # Progress bar
+        self.model_progress = QProgressBar()
+        self.model_progress.setRange(0, 0)  # Indeterminate progress
+        self.model_progress.setVisible(False)
+        layout.addWidget(self.model_progress)
+
+        self.model_status_lbl = QLabel("")
+        self.model_status_lbl.setStyleSheet("color: #2b6cb0; font-weight: bold;")
+        layout.addWidget(self.model_status_lbl)
+
+        return widget
 
     def _add_metric_row(self, title: str, label_widget: QLabel, row: int) -> None:
         title_lbl = QLabel(title)
@@ -206,9 +528,10 @@ class VoiceLabDialog(QDialog):
     def _on_sentence_changed(self, idx: int) -> None:
         self._load_sentence(idx)
 
+    # ── Acoustic Calibration Tab Actions ─────────────────────────────
+
     def _toggle_recording(self) -> None:
         if not self.recorder.is_recording:
-            # Start recording
             try:
                 self.recorder.start()
                 self.record_btn.setText("⏹️ Stop & Calibrate")
@@ -223,7 +546,6 @@ class VoiceLabDialog(QDialog):
                     self, "Recording Error", f"Failed to start audio recording: {e}"
                 )
         else:
-            # Stop recording and analyze
             try:
                 self.status_label.setText("Analyzing audio metrics...")
                 self.recorded_file = self.recorder.stop()
@@ -254,7 +576,6 @@ class VoiceLabDialog(QDialog):
         self.status_label.setText("Calibration complete!")
         self.apply_btn.setEnabled(True)
 
-        # Update metrics labels
         self.wpm_label.setText(
             f"{result.wpm} WPM ({result.spoken_word_count} words in {result.duration_seconds}s)"
         )
@@ -278,7 +599,6 @@ class VoiceLabDialog(QDialog):
             f"<span style='color: {grade_color}; font-size: 13px; font-weight: bold;'>{result.quality_grade}</span>"
         )
 
-        # Feedback notes
         notes = "\n• ".join([""] + result.feedback_notes)
         self.feedback_box.setText(f"Analysis Summary:{notes}")
 
@@ -302,4 +622,223 @@ class VoiceLabDialog(QDialog):
             f"• Silence Timeout: {self.latest_result.recommended_silence_duration}s\n"
             f"• Speaking Cadence: {self.latest_result.wpm} WPM",
         )
-        self.accept()
+
+    # ── Voice Training Library Tab Actions ────────────────────────────
+
+    def _refresh_training_library(self) -> None:
+        self.train_table.blockSignals(True)
+        try:
+            entries = self.archive.search(tag="training", limit=50)
+            self.train_table.setRowCount(len(entries))
+
+            for idx, entry in enumerate(entries):
+                dt_str = time.strftime(
+                    "%Y-%m-%d %H:%M:%S", time.localtime(entry.timestamp)
+                )
+                item_date = QTableWidgetItem(dt_str)
+                item_date.setFlags(item_date.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item_date.setData(Qt.ItemDataRole.UserRole, entry.id)
+                self.train_table.setItem(idx, 0, item_date)
+
+                item_audio = QTableWidgetItem("🎙️ WAV file")
+                item_audio.setFlags(item_audio.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.train_table.setItem(idx, 1, item_audio)
+
+                item_text = QTableWidgetItem(entry.text)
+                self.train_table.setItem(idx, 2, item_text)
+        except Exception as e:
+            print(f"Error loading training library: {e}")
+        finally:
+            self.train_table.blockSignals(False)
+
+    def _toggle_training_recording(self) -> None:
+        if not self.recorder.is_recording:
+            try:
+                self.recorder.start()
+                self.train_record_btn.setText("⏹️ Stop Recording")
+                self.train_rec_status.setText(
+                    "Recording... Read the chosen prompt aloud."
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "Recording Error", f"Failed to record training sample: {e}"
+                )
+        else:
+            try:
+                audio_file = self.recorder.stop()
+                self.train_record_btn.setText("🎙️ Record Training Sample")
+                self.train_rec_status.setText(
+                    "Processing & transcribing training clip..."
+                )
+
+                prompt_text = self.train_prompt_combo.currentData()
+
+                # Add to local archive under training tag
+                self.archive.add_entry(
+                    text=prompt_text,
+                    audio_source_path=audio_file,
+                    duration=5.0,  # approximate duration
+                    tags=["training"],
+                )
+                self._refresh_training_library()
+                self.train_rec_status.setText("Recorded & added to library.")
+            except Exception as e:
+                self.train_rec_status.setText("Failed to save.")
+                QMessageBox.critical(
+                    self, "Save Error", f"Failed to save training sample: {e}"
+                )
+
+    def _on_training_item_edited(self, item: QTableWidgetItem) -> None:
+        if item.column() == 2:
+            row = item.row()
+            date_item = self.train_table.item(row, 0)
+            if date_item:
+                entry_id = date_item.data(Qt.ItemDataRole.UserRole)
+                entry = self.archive.get_entry(entry_id)
+                if entry:
+                    # Update ground truth text in SQLite
+                    self.archive.add_entry(
+                        text=item.text().strip(),
+                        audio_source_path=entry.audio_path,
+                        duration=entry.duration,
+                        tags=entry.tags,
+                        metadata=entry.metadata,
+                        entry_id=entry.id,
+                    )
+
+    def _clear_training_library(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "Clear Training Library",
+            "Are you sure you want to delete all training voice samples from your local storage?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            entries = self.archive.search(tag="training", limit=100)
+            for entry in entries:
+                self.archive.delete_entry(entry.id)
+            self._refresh_training_library()
+
+    def _run_adaptation_training(self) -> None:
+        self.training_progress_label.setText("Starting profile adaptation training...")
+        self.run_training_btn.setEnabled(False)
+
+        self._training_worker = TrainingWorker(
+            self.archive, self.vocab_manager, self.diff_learner, self.runner
+        )
+        self._training_worker.status_signal.connect(
+            self.training_progress_label.setText
+        )
+        self._training_worker.finished_signal.connect(self._on_training_complete)
+        self._training_worker.error_signal.connect(self._on_training_error)
+        self._training_worker.start()
+
+    @Slot(int, float, float, float)
+    def _on_training_complete(
+        self, count: int, threshold: float, timeout: float, gain: float
+    ) -> None:
+        self.run_training_btn.setEnabled(True)
+        self.training_progress_label.setText("Training profile adaptation complete.")
+
+        # Save Calibrated acoustic params to QSettings
+        self.settings.setValue("silence_threshold", threshold)
+        self.settings.setValue("silence_duration", timeout)
+        self.settings.setValue("gain_factor", gain)
+
+        QMessageBox.information(
+            self,
+            "Training Complete",
+            f"Voice profile training complete!\n\n"
+            f"• Learned Vocabulary Rules: {count} corrections added.\n"
+            f"• Calibrated Silence Gate: {threshold:.4f} RMS\n"
+            f"• Calibrated Speaking Timeout: {timeout:.2f}s\n"
+            f"• Calibrated Input Gain: {gain:.2f}x\n\n"
+            f"Settings have been saved and applied to your voice profile.",
+        )
+
+    @Slot(str)
+    def _on_training_error(self, err: str) -> None:
+        self.run_training_btn.setEnabled(True)
+        self.training_progress_label.setText("Training failed.")
+        QMessageBox.warning(self, "Training Error", err)
+
+    # ── Model Manager Tab Actions ─────────────────────────────────────
+
+    def _refresh_model_cache_status(self) -> None:
+        models = [
+            (
+                "tiny",
+                "tiny (Ultra Fast / ~75MB)",
+                "huggingface/hub/models--Systran--faster-whisper-tiny",
+            ),
+            (
+                "base",
+                "base (Default / ~140MB)",
+                "huggingface/hub/models--Systran--faster-whisper-base",
+            ),
+            (
+                "small",
+                "small (Better Quality / ~460MB)",
+                "huggingface/hub/models--Systran--faster-whisper-small",
+            ),
+            (
+                "medium",
+                "medium (High Accuracy / ~1.5GB)",
+                "huggingface/hub/models--Systran--faster-whisper-medium",
+            ),
+            (
+                "large-v3",
+                "large-v3 (Studio Grade / ~3.0GB)",
+                "huggingface/hub/models--Systran--faster-whisper-large-v3",
+            ),
+        ]
+
+        self.model_table.setRowCount(len(models))
+        for idx, (size, desc, _) in enumerate(models):
+            item_size = QTableWidgetItem(size)
+            item_size.setFlags(item_size.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.model_table.setItem(idx, 0, item_size)
+
+            item_desc = QTableWidgetItem(desc)
+            item_desc.setFlags(item_desc.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.model_table.setItem(idx, 1, item_desc)
+
+            cached = LocalModelManager.is_model_cached(size)
+            status_str = "✅ Cached & Ready" if cached else "❌ Not Downloaded"
+            item_status = QTableWidgetItem(status_str)
+            item_status.setFlags(item_status.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.model_table.setItem(idx, 2, item_status)
+
+    def _download_selected_model(self) -> None:
+        selected_indexes = self.model_table.selectedIndexes()
+        if not selected_indexes:
+            QMessageBox.warning(
+                self, "No Selection", "Please select a model row in the table first."
+            )
+            return
+
+        row = selected_indexes[0].row()
+        model_size = self.model_table.item(row, 0).text()
+
+        self.download_model_btn.setEnabled(False)
+        self.model_progress.setVisible(True)
+
+        self._download_worker = ModelDownloadWorker(model_size)
+        self._download_worker.status_signal.connect(self.model_status_lbl.setText)
+        self._download_worker.finished_signal.connect(self._on_download_complete)
+        self._download_worker.start()
+
+    @Slot(bool, str)
+    def _on_download_complete(self, success: bool, msg: str) -> None:
+        self.download_model_btn.setEnabled(True)
+        self.model_progress.setVisible(False)
+        self._refresh_model_cache_status()
+
+        if success:
+            self.model_status_lbl.setText("Download complete.")
+            QMessageBox.information(self, "Success", msg)
+        else:
+            self.model_status_lbl.setText("Download failed.")
+            QMessageBox.warning(
+                self, "Download Error", f"Failed to download model files: {msg}"
+            )

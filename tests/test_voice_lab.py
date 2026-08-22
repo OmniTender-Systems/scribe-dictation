@@ -153,3 +153,48 @@ class TestDiffLearner:
         assert manager.apply_replacements("Import pie side six") == "Import PySide6"
         assert "kubectl" in manager.get_words()
         assert "PySide6" in manager.get_words()
+
+
+class TestLocalModelManager:
+    def test_is_model_cached(self, monkeypatch):
+        def mock_download_success(size, local_files_only=False):
+            return "/path/to/model"
+
+        def mock_download_fail(size, local_files_only=False):
+            raise ValueError("not cached")
+
+        from scribe_dictation.transcribe.local import LocalModelManager
+
+        monkeypatch.setattr("faster_whisper.download_model", mock_download_success)
+        assert LocalModelManager.is_model_cached("base") is True
+
+        monkeypatch.setattr("faster_whisper.download_model", mock_download_fail)
+        assert LocalModelManager.is_model_cached("base") is False
+
+    def test_run_periodic_check(self, monkeypatch):
+        from PySide6.QtCore import QSettings
+
+        settings = QSettings("PrivacyScribeTest", "Test")
+        settings.clear()
+
+        called = []
+
+        def mock_download_or_update(size):
+            called.append(size)
+            return "/path/to/model"
+
+        from scribe_dictation.transcribe.local import LocalModelManager
+
+        monkeypatch.setattr(
+            LocalModelManager, "download_or_update", mock_download_or_update
+        )
+
+        checked, msg = LocalModelManager.run_periodic_check(settings)
+        assert checked is True
+        assert "base" in called
+
+        called.clear()
+        checked2, msg2 = LocalModelManager.run_periodic_check(settings)
+        assert checked2 is False
+        assert not called
+        settings.clear()
