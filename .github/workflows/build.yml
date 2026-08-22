@@ -99,8 +99,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            PrivacyScribe-Windows/*
-            PrivacyScribe-macOS/*
+            PrivacyScribe-Windows/**/*.exe
+            PrivacyScribe-Windows/*.exe
+            PrivacyScribe-macOS/**/*.dmg
+            PrivacyScribe-macOS/*.dmg
           generate_release_notes: true
           draft: false
           prerelease: false
