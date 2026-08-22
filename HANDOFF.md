@@ -1,29 +1,30 @@
-# Session Handoff: Scribe Dictation
+# Project Handoff: Privacy Scribe (Release v0.3.0)
 
 ## 1. Goal
-Fix Whisper audio silence hallucinations caused by microphone background fan noise and ensure Voice Activity Detection (VAD) and Voice Lab calibration function properly.
+Implement a multi-tiered in-memory audio sound bank library for dictation activation/deactivation cues (Free: 3 sounds, Basic: 7 sounds, Pro: 18 themes), integrate live auditioning into the Settings UI, bump the release version to `v0.3.0`, and prepare for the next phase of development (Export Session / Audio Export & Formatting expansions).
 
 ## 2. Done
-- **Silero Neural VAD Fix**:
-  - In `scribe_dictation/audio/vad.py`, updated `detect_speech_segments()` to directly return `neural_segments` whenever Silero VAD executes (`if neural_segments is not None: return neural_segments`).
-  - Fixed the bug where Silero detecting 0 speech segments (`[]`) on fan noise was falsely treated as a failure and fallen back to the energy heuristic, which amplified fan hiss into Whisper.
-- **Voice Lab Dialog Fix**:
-  - In `scribe_dictation/ui/app.py`, fixed `_open_voice_lab_dialog()` to pass `self` as the Qt parent widget (`VoiceLabDialog(self)`), eliminating `AttributeError` when running calibration.
-- **Test Suite Updates**:
-  - Updated `tests/test_vad.py` with `TestNeuralSileroVAD` covering real neural noise rejection and fallback on exception.
-  - All 22 VAD unit/integration tests and audio/transcription tests pass cleanly (`22 passed in 1.24s`).
+- **Procedural Sound Bank (`sound_bank.py`)**: Built zero-dependency in-memory procedural synthesis engine for 18 distinct sound themes generating 16-bit 44.1kHz mono WAV buffers with zero external asset files.
+- **Three-Tier Gating**:
+  - *Free / Trial (3 themes)*: Classic Beep & Boop, Subtle Mechanical Tick, Soft Ambient Chime.
+  - *Basic (7 themes)*: Free themes + Gentle Bubble, Digital 8-Bit Chirp, Tactile Wooden Tap, Modern UI Bubble Pop.
+  - *Pro Exclusive (18 themes)*: Basic themes + Vintage Cassette Tape Deck, Mechanical Keyboard 'Thock', Fighter Jet HUD Radar Lock, Neural Cyber Pulse, Glass Crystal Chime, Submarine Sonar Ping, Studio DSLR Shutter, Cosmic Synth Warp, Vintage Typewriter Bell, Acoustic Marimba Triad, Zen Tibetan Singing Bowl.
+- **Settings UI (`app.py`)**: Added sound theme selector dropdown with live "▶ Start" and "■ Stop" audition buttons, tier badges (`🔒 Basic`, `🔒 Pro`), and graceful fallback logic.
+- **Automated Tests**: Added `tests/test_sound_bank.py` validating 100% of synthesizers, WAV headers, and tier access rules. Updated `tests/test_updater.py`.
+- **Release Deployment**: Bumped project version to `v0.3.0` in `pyproject.toml` and `updater.py`, committed, and pushed with tag `v0.3.0` to `origin/main`.
 
 ## 3. State / Artifacts
-- **Modified Files**:
-  - `scribe_dictation/audio/vad.py`: Neural VAD segment evaluation logic.
-  - `scribe_dictation/ui/app.py`: Voice Lab dialog instantiation.
-  - `tests/test_vad.py`: Unit test assertions and dedicated neural VAD tests.
-- **Environment**:
-  - Virtualenv: `C:\Users\subti\repos\scribe-dictation\.venv`
-  - Python / Pytest: `.venv\Scripts\pytest.exe tests/test_vad.py`
+- **Repository**: `C:\Users\subti\repos\scribe-dictation`
+- **Active Files**:
+  - `scribe_dictation/audio/sound_bank.py`
+  - `scribe_dictation/ui/app.py`
+  - `scribe_dictation/updater.py`
+  - `pyproject.toml`
+  - `tests/test_sound_bank.py`
+  - `tests/test_updater.py`
+- **Git Status**: Clean on branch `main` at commit `263b2ac`, tag `v0.3.0` pushed to remote.
 
-## 4. Next Step
-Copy and paste this prompt into the next session:
+## 4. Next Step Prompt
 ```text
-Look at the handoff. Run a quick smoke test on the live dictation app (or test suite) with our updated Silero VAD filter and Voice Lab calibration.
+Look at the handoff. Let's start the export session for Privacy Scribe to expand and enhance the audio/transcript export features (formats, batch processing, audio snippet extraction, and export UI workflows).
 ```
