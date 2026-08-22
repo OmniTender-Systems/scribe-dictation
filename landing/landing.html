@@ -1,0 +1,282 @@
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { darkMode: 'media' };
+</script>
+<style>
+  @keyframes float { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(-10px); } }
+  @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(99,102,241,0.35); } 100% { box-shadow: 0 0 0 18px rgba(99,102,241,0); } }
+  .float { animation: float 5s ease-in-out infinite; }
+  .pulse-ring { animation: pulse-ring 2s ease-out infinite; }
+  .fade-up { opacity: 0; transform: translateY(24px); transition: opacity .6s ease, transform .6s ease; }
+  .fade-up.in { opacity: 1; transform: translateY(0); }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+</style>
+
+<div class="min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+
+  <!-- EARLY BIRD BANNER -->
+  <div class="bg-gradient-to-r from-amber-500 to-orange-500 text-white text-center text-sm sm:text-base font-semibold py-2.5 px-4">
+    🐦 Early Bird: <span class="underline decoration-2 underline-offset-2">40% off</span> automatically applied at checkout — first 20 customers only
+  </div>
+
+  <!-- HERO -->
+  <header class="relative overflow-hidden border-b border-slate-200 dark:border-slate-800">
+    <div class="absolute inset-0 -z-10 bg-gradient-to-br from-indigo-50 via-white to-white dark:from-indigo-950/40 dark:via-slate-950 dark:to-slate-950"></div>
+    <div class="max-w-5xl mx-auto px-6 pt-16 pb-20 text-center">
+      <div class="inline-flex items-center gap-2 rounded-full border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950/60 px-4 py-1.5 text-sm font-medium text-indigo-700 dark:text-indigo-300 mb-6">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-500 opacity-60"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+        </span>
+        100% offline &middot; zero telemetry &middot; Windows &amp; macOS
+      </div>
+
+      <h1 class="text-4xl sm:text-6xl font-extrabold tracking-tight mb-5">
+        <span data-gumroad-field="name">Private Scribe</span>
+      </h1>
+
+      <p class="text-lg sm:text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+        <span data-gumroad-field="description">Dictate 3x faster with 100% privacy. Windows desktop app that transcribes your voice into text instantly — offline, no subscriptions, just works.</span>
+      </p>
+
+      <div class="relative float mb-10 mx-auto max-w-3xl">
+        <div class="absolute -inset-4 bg-indigo-400/20 dark:bg-indigo-500/10 blur-3xl rounded-3xl -z-10"></div>
+        <img src="https://public-files.gumroad.com/k9mdy23e767kn515gjkv6lkiwqty"
+             alt="Private Scribe app screenshot"
+             class="w-full rounded-2xl shadow-2xl ring-1 ring-slate-900/10 dark:ring-white/10" />
+      </div>
+
+      <div class="flex flex-col items-center gap-3">
+        <a href="#buy"
+           class="pulse-ring inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-lg px-8 py-4 shadow-lg shadow-indigo-600/25 transition-all hover:-translate-y-0.5">
+          See pricing — from <span data-gumroad-field="price">$29</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </a>
+        <p class="text-sm text-slate-500 dark:text-slate-500">
+          One-time payment &middot; lifetime license &middot; 30-day money-back guarantee
+        </p>
+        <p class="text-xs text-slate-400 dark:text-slate-600">
+          <span data-gumroad-field="rating">Be the first to review</span> &middot; <span data-gumroad-field="review-count"></span>
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <!-- PROBLEM -->
+  <section class="max-w-5xl mx-auto px-6 py-20 fade-up" data-fade>
+    <div class="grid sm:grid-cols-2 gap-10 items-center">
+      <div>
+        <h2 class="text-2xl sm:text-3xl font-bold mb-4">Every word you dictate to the cloud is a word you can't take back</h2>
+        <p class="text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
+          Most AI speech-to-text apps stream your raw audio to remote servers — client emails, legal notes,
+          medical records, source code, all of it. If you're a doctor, lawyer, developer, therapist, or just
+          someone who values privacy, that's a real confidentiality risk, not a hypothetical one.
+        </p>
+        <p class="text-slate-600 dark:text-slate-400 leading-relaxed">
+          Private Scribe runs entirely on your own machine. No cloud round-trip, no telemetry, no subscription
+          that keeps billing you to keep listening.
+        </p>
+      </div>
+      <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-6">
+        <div class="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l6.28 11.19c.75 1.334-.213 2.99-1.742 2.99H3.72c-1.53 0-2.493-1.656-1.743-2.99l6.28-11.19zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+          <span class="font-semibold">Cloud dictation tools</span>
+        </div>
+        <ul class="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+          <li>✗ Uploads raw audio to third-party servers</li>
+          <li>✗ $15–25/month, forever</li>
+          <li>✗ Stops working without internet</li>
+          <li>✗ Your voice data, someone else's terms of service</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="bg-slate-50 dark:bg-slate-900/50 border-y border-slate-200 dark:border-slate-800 py-20">
+    <div class="max-w-5xl mx-auto px-6">
+      <h2 class="text-2xl sm:text-3xl font-bold text-center mb-3 fade-up" data-fade>How it works, in 3 seconds</h2>
+      <p class="text-center text-slate-500 dark:text-slate-400 mb-14 fade-up" data-fade>Hold a key, speak, release — done.</p>
+
+      <div class="grid sm:grid-cols-3 gap-8 mb-16">
+        <div class="text-center fade-up" data-fade>
+          <div class="mx-auto w-14 h-14 rounded-2xl bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xl mb-4">1</div>
+          <h3 class="font-semibold mb-2">Hold your hotkey</h3>
+          <p class="text-sm text-slate-600 dark:text-slate-400">Ctrl+Win, F8, or Caps Lock — anywhere in Windows or macOS.</p>
+        </div>
+        <div class="text-center fade-up" data-fade>
+          <div class="mx-auto w-14 h-14 rounded-2xl bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xl mb-4">2</div>
+          <h3 class="font-semibold mb-2">Speak naturally</h3>
+          <p class="text-sm text-slate-600 dark:text-slate-400">Emails, code, notes, essays — transcribed locally in real time.</p>
+        </div>
+        <div class="text-center fade-up" data-fade>
+          <div class="mx-auto w-14 h-14 rounded-2xl bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xl mb-4">3</div>
+          <h3 class="font-semibold mb-2">Release and it's pasted</h3>
+          <p class="text-sm text-slate-600 dark:text-slate-400">Instantly lands in your cursor — VS Code, Slack, Word, Obsidian, anywhere.</p>
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div class="flex gap-3 p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 fade-up" data-fade>
+          <span class="text-xl">🔒</span>
+          <div><h4 class="font-semibold mb-1">100% offline</h4><p class="text-sm text-slate-600 dark:text-slate-400">Local Whisper models. Works with Wi-Fi off.</p></div>
+        </div>
+        <div class="flex gap-3 p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 fade-up" data-fade>
+          <span class="text-xl">⚡</span>
+          <div><h4 class="font-semibold mb-1">Zero-latency hotkey</h4><p class="text-sm text-slate-600 dark:text-slate-400">Global push-to-talk, no app switching.</p></div>
+        </div>
+        <div class="flex gap-3 p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 fade-up" data-fade>
+          <span class="text-xl">🪟</span>
+          <div><h4 class="font-semibold mb-1">Floating VoiceCapsule HUD</h4><p class="text-sm text-slate-600 dark:text-slate-400">Translucent visualizer that never steals focus.</p></div>
+        </div>
+        <div class="flex gap-3 p-5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 fade-up" data-fade>
+          <span class="text-xl">💰</span>
+          <div><h4 class="font-semibold mb-1">Pay once, own forever</h4><p class="text-sm text-slate-600 dark:text-slate-400">No $15–25/month subscription treadmill.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCREENSHOTS -->
+  <section class="max-w-5xl mx-auto px-6 py-20">
+    <h2 class="text-2xl sm:text-3xl font-bold text-center mb-12 fade-up" data-fade>See it in action</h2>
+    <div class="grid sm:grid-cols-3 gap-6">
+      <img src="https://public-files.gumroad.com/gipo2xqq86lj45cvka7fj5nbdzp0" alt="Private Scribe screenshot 1" class="rounded-xl shadow-lg ring-1 ring-slate-900/10 dark:ring-white/10 fade-up" data-fade />
+      <img src="https://public-files.gumroad.com/xt3i9pngnqlb06m0hs27a1x2v63f" alt="Private Scribe screenshot 2" class="rounded-xl shadow-lg ring-1 ring-slate-900/10 dark:ring-white/10 fade-up" data-fade />
+      <img src="https://public-files.gumroad.com/y6lj40t9atguom3dmwns845gq1zz" alt="Private Scribe screenshot 3" class="rounded-xl shadow-lg ring-1 ring-slate-900/10 dark:ring-white/10 fade-up" data-fade />
+    </div>
+  </section>
+
+  <!-- WHO IT'S FOR -->
+  <section class="bg-slate-50 dark:bg-slate-900/50 border-y border-slate-200 dark:border-slate-800 py-20">
+    <div class="max-w-5xl mx-auto px-6">
+      <h2 class="text-2xl sm:text-3xl font-bold text-center mb-12 fade-up" data-fade>Built for people who can't risk a leak</h2>
+      <div class="grid sm:grid-cols-4 gap-6 text-center">
+        <div class="fade-up" data-fade><div class="text-3xl mb-2">⚖️</div><p class="font-medium">Lawyers</p><p class="text-xs text-slate-500 dark:text-slate-500 mt-1">Privileged client notes</p></div>
+        <div class="fade-up" data-fade><div class="text-3xl mb-2">🩺</div><p class="font-medium">Clinicians</p><p class="text-xs text-slate-500 dark:text-slate-500 mt-1">HIPAA-sensitive records</p></div>
+        <div class="fade-up" data-fade><div class="text-3xl mb-2">💻</div><p class="font-medium">Developers</p><p class="text-xs text-slate-500 dark:text-slate-500 mt-1">Proprietary code by voice</p></div>
+        <div class="fade-up" data-fade><div class="text-3xl mb-2">🔐</div><p class="font-medium">Privacy-first users</p><p class="text-xs text-slate-500 dark:text-slate-500 mt-1">Just don't trust the cloud</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="max-w-3xl mx-auto px-6 py-20">
+    <h2 class="text-2xl sm:text-3xl font-bold text-center mb-10 fade-up" data-fade>Questions</h2>
+    <div class="space-y-3">
+      <details class="group rounded-xl border border-slate-200 dark:border-slate-800 p-5 fade-up" data-fade>
+        <summary class="cursor-pointer font-medium flex justify-between items-center list-none">
+          Does any audio ever leave my machine?
+          <svg class="h-5 w-5 text-slate-400 transition-transform group-open:rotate-45" viewBox="0 0 20 20" fill="currentColor"><path d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"/></svg>
+        </summary>
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">No. Transcription runs locally via faster-whisper on your CPU/GPU. You can disconnect from Wi-Fi entirely and it still works.</p>
+      </details>
+      <details class="group rounded-xl border border-slate-200 dark:border-slate-800 p-5 fade-up" data-fade>
+        <summary class="cursor-pointer font-medium flex justify-between items-center list-none">
+          Is this a subscription?
+          <svg class="h-5 w-5 text-slate-400 transition-transform group-open:rotate-45" viewBox="0 0 20 20" fill="currentColor"><path d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"/></svg>
+        </summary>
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">No — one-time payment, lifetime license, free updates.</p>
+      </details>
+      <details class="group rounded-xl border border-slate-200 dark:border-slate-800 p-5 fade-up" data-fade>
+        <summary class="cursor-pointer font-medium flex justify-between items-center list-none">
+          What platforms are supported?
+          <svg class="h-5 w-5 text-slate-400 transition-transform group-open:rotate-45" viewBox="0 0 20 20" fill="currentColor"><path d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"/></svg>
+        </summary>
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Windows 10/11 (64-bit) and macOS. 4GB RAM minimum, 8GB recommended.</p>
+      </details>
+      <details class="group rounded-xl border border-slate-200 dark:border-slate-800 p-5 fade-up" data-fade>
+        <summary class="cursor-pointer font-medium flex justify-between items-center list-none">
+          What if it doesn't work for me?
+          <svg class="h-5 w-5 text-slate-400 transition-transform group-open:rotate-45" viewBox="0 0 20 20" fill="currentColor"><path d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"/></svg>
+        </summary>
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">30-day money-back guarantee, no questions asked.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section id="buy" class="relative overflow-hidden py-24 border-t border-slate-200 dark:border-slate-800">
+    <div class="absolute inset-0 -z-10 bg-gradient-to-t from-indigo-50 to-white dark:from-indigo-950/30 dark:to-slate-950"></div>
+    <div class="max-w-4xl mx-auto px-6 fade-up" data-fade>
+      <div class="text-center mb-14">
+        <h2 class="text-3xl sm:text-4xl font-extrabold mb-4">Stop typing. Start talking.</h2>
+        <p class="text-slate-600 dark:text-slate-400">One payment. Lifetime license. Your voice never leaves your machine.</p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-6 max-w-3xl mx-auto">
+        <!-- Standard -->
+        <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 flex flex-col">
+          <h3 class="font-semibold text-lg mb-1">Standard</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-500 mb-4">Everything you need to ditch cloud dictation</p>
+          <div class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-xs font-semibold px-2.5 py-1 mb-3 w-fit">
+            🐦 Early Bird &minus;40%
+          </div>
+          <div class="flex items-baseline gap-2 mb-6">
+            <span class="text-4xl font-extrabold"><span data-gumroad-field="price">$17.40</span></span>
+            <span class="text-lg text-slate-400 dark:text-slate-600 line-through">$29</span>
+          </div>
+          <ul class="space-y-2 text-sm text-slate-600 dark:text-slate-400 mb-8 flex-1">
+            <li>✓ 100% offline transcription</li>
+            <li>✓ Global hotkey + auto-paste</li>
+            <li>✓ Floating VoiceCapsule HUD</li>
+            <li>✓ Base/small Whisper models</li>
+            <li>✓ Lifetime updates</li>
+          </ul>
+          <a data-gumroad-action="buy"
+             class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500 font-semibold px-6 py-3 transition-colors cursor-pointer">
+            Get Standard
+          </a>
+        </div>
+
+        <!-- Lifetime Premium -->
+        <div class="relative rounded-2xl border-2 border-indigo-500 bg-white dark:bg-slate-900 p-8 flex flex-col shadow-xl shadow-indigo-600/10">
+          <div class="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 text-white text-xs font-semibold px-3 py-1">
+            Save $5 vs. upgrading later
+          </div>
+          <h3 class="font-semibold text-lg mb-1">Lifetime Premium</h3>
+          <p class="text-sm text-slate-500 dark:text-slate-500 mb-4">For power users who dictate all day</p>
+          <div class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-xs font-semibold px-2.5 py-1 mb-3 w-fit">
+            🐦 Early Bird &minus;40%
+          </div>
+          <div class="flex items-baseline gap-2 mb-6">
+            <span class="text-4xl font-extrabold">$35.40</span>
+            <span class="text-lg text-slate-400 dark:text-slate-600 line-through">$59</span>
+          </div>
+          <ul class="space-y-2 text-sm text-slate-600 dark:text-slate-400 mb-8 flex-1">
+            <li>✓ Everything in Standard</li>
+            <li>✓ Large-v3 Whisper model (highest accuracy)</li>
+            <li>✓ Quick Transform Palette (Ctrl+Alt+T)</li>
+            <li>✓ Priority feature requests</li>
+            <li>✓ Lifetime updates</li>
+          </ul>
+          <a data-gumroad-action="buy" data-gumroad-option="Lifetime Premium"
+             class="pulse-ring inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold px-6 py-3 shadow-lg shadow-indigo-600/25 transition-all hover:-translate-y-0.5 cursor-pointer">
+            Get Lifetime Premium
+          </a>
+        </div>
+      </div>
+
+      <p class="text-center mt-8 text-sm text-slate-500 dark:text-slate-500">
+        Already own Standard? <a href="https://omnitender.gumroad.com/l/nmxgk" class="text-indigo-600 dark:text-indigo-400 font-medium hover:underline">Upgrade to Lifetime Premium for $35</a>
+      </p>
+      <p class="text-center mt-2 text-xs text-slate-400 dark:text-slate-600">30-day money-back guarantee &middot; instant download</p>
+    </div>
+  </section>
+
+  <footer class="border-t border-slate-200 dark:border-slate-800 py-8 text-center text-xs text-slate-400 dark:text-slate-600">
+    Private Scribe &middot; 100% offline AI dictation
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var els = document.querySelectorAll('[data-fade]');
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('in'); obs.unobserve(e.target); }
+      });
+    }, { threshold: 0.1 });
+    els.forEach(function (el) { obs.observe(el); });
+  })();
+</script>

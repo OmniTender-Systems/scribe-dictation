@@ -10,6 +10,7 @@ Both share the same activation cache + UI.
 import hashlib
 import hmac
 import json
+import os
 import secrets
 
 from PySide6.QtCore import QSettings
@@ -25,7 +26,7 @@ SETTING_LICENSE_SIGNATURE = "license_signature"
 SETTING_MACHINE_UUID = "machine_uuid"
 LICENSE_SECRET = "scribe-dictation-super-secret-salt-2026"
 KEY_PREFIX = "SCRIBE"
-BUY_URL = "https://gumroad.com/l/eyiexi"
+BUY_URL = os.environ.get("SCRIBE_BUY_URL", "https://gumroad.com/l/eyiexi")
 
 
 def generate_signature(license_key: str, fingerprint: str) -> str:

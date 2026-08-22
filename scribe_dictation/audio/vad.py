@@ -318,10 +318,10 @@ def detect_speech_segments(
     # 1. Try Neural VAD first if enabled
     if cfg.use_neural_vad:
         neural_segments = _neural_vad_segments(audio, sample_rate, cfg)
-        if neural_segments is not None and len(neural_segments) > 0:
+        if neural_segments is not None:
             return neural_segments
 
-    # 2. Energy & Spectral VAD
+    # 2. Energy & Spectral VAD (fallback if neural VAD is disabled or unavailable)
     return _energy_spectral_vad_segments(audio, sample_rate, cfg)
 
 

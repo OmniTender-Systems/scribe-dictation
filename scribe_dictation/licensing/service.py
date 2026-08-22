@@ -4,7 +4,10 @@ License service — Gumroad v2 verify, machine-bound + offline grace.
 Architecture
 -----------
 verify_license_online(key, fingerprint)
-    → Calls Gumroad API; returns (is_valid, message, metadata dict).
+    → Calls the configured license API (Gumroad by default, or the
+      PrivacyScribe billing backend via SCRIBE_LICENSE_API_URL); returns
+      (is_valid, message, metadata dict). Both backends share the same
+      {success, purchase:{...}} / {success:false, message} JSON contract.
 
 Cached-license validation (no Qt dependency — pure dict):
     validate_cached_activation(cache: dict | None, current_fingerprint: str)
@@ -48,11 +51,21 @@ class LicenseService:
 
     def __init__(
         self,
-        check_url: str = DEFAULT_CHECK_URL,
-        product_id: str = GUMROAD_PRODUCT_ID,
+        check_url: str | None = None,
+        product_id: str | None = None,
     ):
-        self.check_url = check_url
-        self.product_id = product_id
+        # Resolved at call time (not at import/def-default time) so tests and
+        # deployments can flip SCRIBE_LICENSE_API_URL without reloading the module.
+        # Falls back to the legacy Gumroad endpoint so the Gumroad path keeps working
+        # in parallel during the Stripe migration (owner's choice, per env var).
+        self.check_url = (
+            check_url or os.environ.get("SCRIBE_LICENSE_API_URL") or DEFAULT_CHECK_URL
+        )
+        self.product_id = (
+            product_id
+            or os.environ.get("SCRIBE_LICENSE_PRODUCT_ID")
+            or GUMROAD_PRODUCT_ID
+        )
 
     # ── Online verification ─────────────────────────────────────────
 
@@ -122,15 +135,22 @@ class LicenseService:
                 }
                 return True, "License verified successfully!", metadata
             else:
-                msg = data.get("message") or f"Invalid license (HTTP {response.status_code})."
+                msg = (
+                    data.get("message")
+                    or f"Invalid license (HTTP {response.status_code})."
+                )
                 return False, msg, {}
 
         except requests.RequestException as exc:
             logger.error("License network error: %s", exc)
-            return False, (
-                "Network error: could not reach licensing server. "
-                "Please check your internet connection."
-            ), {}
+            return (
+                False,
+                (
+                    "Network error: could not reach licensing server. "
+                    "Please check your internet connection."
+                ),
+                {},
+            )
 
     # ── Offline / cached-license validation ─────────────────────────
 
@@ -208,7 +228,9 @@ class LicenseService:
         Caller persists this wherever it likes (QSettings, JSON file, etc.).
         """
         return {
-            "key_hash": hashlib.sha256(license_key.strip().encode("utf-8")).hexdigest()[:16],
+            "key_hash": hashlib.sha256(license_key.strip().encode("utf-8")).hexdigest()[
+                :16
+            ],
             "fingerprint": _build_fingerprint_hash(machine_fingerprint),
             "activated_at": datetime.now(timezone.utc).isoformat(),
             "last_verified": datetime.now(timezone.utc).isoformat(),

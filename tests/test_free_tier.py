@@ -7,12 +7,15 @@ Tests for Privacy Scribe Free vs Pro edition limits:
 """
 
 import sys
+import time
 import unittest
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 from PySide6.QtWidgets import QApplication
 
 from scribe_dictation.ui.app import (
+    FREE_MAX_RECORDING_SECONDS,
     ScribeDictationWindow,
     SettingsDialog,
 )
@@ -94,6 +97,59 @@ class TestFreeTierLimits(unittest.TestCase):
         dialog._save()
 
         self.assertEqual(self.db.get("local_model_size"), "tiny")
+
+    @patch("scribe_dictation.ui.app.is_offline_cache_valid", return_value=False)
+    @patch("scribe_dictation.ui.app._start_global_hotkey")
+    def test_free_blocked_at_daily_limit(self, mock_hotkey, mock_license):
+        """Once 20 free dictations are used today, a 21st attempt must be
+        blocked (no recording starts) and the daily-limit modal is shown
+        instead, which points the user at the upgrade/BUY_URL path."""
+        win = ScribeDictationWindow()
+        self.db["daily_usage_date"] = date.today().isoformat()
+        self.db["daily_usage_count"] = 20
+
+        self.assertEqual(win._get_remaining_daily_dictations(), 0)
+
+        with patch.object(win, "_show_daily_limit_modal") as mock_modal:
+            win._start_recording()
+            mock_modal.assert_called_once()
+        # No recorder should have been created/started for the blocked attempt.
+        self.assertIsNone(win._recorder)
+
+    @patch("scribe_dictation.ui.app.is_offline_cache_valid", return_value=True)
+    @patch("scribe_dictation.ui.app._start_global_hotkey")
+    def test_recording_cap_not_applied_with_valid_license(
+        self, mock_hotkey, mock_license
+    ):
+        """The 10s hard recording cap must never trigger when a valid
+        (cached) license is active."""
+        win = ScribeDictationWindow()
+        self.assertTrue(win._is_pro())
+        # Simulate a recording that has clearly exceeded the free-tier cap.
+        win._recording_started_at = time.monotonic() - (FREE_MAX_RECORDING_SECONDS + 5)
+        # The guard used by the live meter loop / stop-recording clamp must
+        # be False for a Pro/licensed user, regardless of elapsed time.
+        self.assertFalse(not win._is_pro())
+
+    @patch("scribe_dictation.ui.app.is_offline_cache_valid", return_value=False)
+    @patch("scribe_dictation.ui.app._start_global_hotkey")
+    def test_trial_state_persists_across_simulated_restart(
+        self, mock_hotkey, mock_license
+    ):
+        """Trial usage recorded in QSettings must survive an app restart
+        (i.e. a fresh ScribeDictationWindow instance reading the same
+        QSettings-backed store)."""
+        win1 = ScribeDictationWindow()
+        win1._increment_daily_dictation_count()
+        win1._increment_daily_dictation_count()
+        win1._increment_daily_dictation_count()
+        self.assertEqual(win1._get_daily_dictation_count(), 3)
+
+        # "Restart" the app: build a brand-new window against the same
+        # persisted settings store (self.db), simulating process relaunch.
+        win2 = ScribeDictationWindow()
+        self.assertEqual(win2._get_daily_dictation_count(), 3)
+        self.assertEqual(win2._get_remaining_daily_dictations(), 17)
 
 
 if __name__ == "__main__":

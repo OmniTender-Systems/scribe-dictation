@@ -109,9 +109,10 @@ class TestSpeechDetectionAndNoiseRejection:
     """Tests for detecting speech and rejecting non-speech noise."""
 
     def test_detects_valid_speech(self):
-        """Synthetic speech tone is correctly detected as speech."""
+        """Synthetic speech tone is correctly detected as speech with energy/spectral VAD."""
         speech = _generate_synthetic_speech(duration=1.0, sample_rate=16000)
-        assert is_speech_present(speech, sample_rate=16000)
+        config = VADConfig(use_neural_vad=False, sample_rate=16000)
+        assert is_speech_present(speech, sample_rate=16000, config=config)
 
     def test_rejects_constant_background_hiss(self):
         """Low-level steady white noise / background hiss is rejected as non-speech."""
@@ -151,7 +152,12 @@ class TestSilenceTrimming:
         full_audio = np.concatenate([lead_in, speech, lead_out])
         total_len = len(full_audio)
 
-        processed = process_audio(full_audio, sample_rate=sample_rate, pad_ms=150)
+        config = VADConfig(
+            use_neural_vad=False, sample_rate=sample_rate, pad_speech_ms=150
+        )
+        processed = process_audio(
+            full_audio, sample_rate=sample_rate, pad_ms=150, config=config
+        )
         assert processed.size > 0
         # The processed output must be significantly shorter than the un-trimmed full audio
         assert len(processed) < total_len
@@ -243,7 +249,8 @@ class TestProcessAudioIntegration:
         trail_silence = np.zeros(int(sample_rate * 0.8), dtype=np.float32)
 
         raw_recording = np.concatenate([lead_silence, speech, trail_silence])
-        processed = process_audio(raw_recording, sample_rate=sample_rate)
+        config = VADConfig(use_neural_vad=False, sample_rate=sample_rate)
+        processed = process_audio(raw_recording, sample_rate=sample_rate, config=config)
 
         assert processed.size > 0
         assert len(processed) < len(raw_recording)
@@ -260,10 +267,43 @@ class TestProcessAudioIntegration:
         )
         stereo_int16 = (np.column_stack([speech, speech]) * 32767).astype(np.int16)
 
-        processed = process_audio(stereo_int16, sample_rate=sample_rate)
+        config = VADConfig(use_neural_vad=False, sample_rate=sample_rate)
+        processed = process_audio(stereo_int16, sample_rate=sample_rate, config=config)
         assert processed.ndim == 1
         assert processed.dtype == np.float32
         assert processed.size > 0
+
+
+class TestNeuralSileroVAD:
+    """Dedicated tests for Silero Neural VAD rejection and fallback behavior."""
+
+    def test_neural_vad_rejects_fan_noise_and_does_not_fallback_to_energy(self):
+        """When Neural VAD returns [] (no speech), detect_speech_segments must return [] and NOT fallback to energy VAD."""
+        sample_rate = 16000
+        # Simulating broadband fan noise / ambient room noise
+        np.random.seed(123)
+        fan_noise = np.random.normal(0, 0.03, sample_rate * 2).astype(np.float32)
+
+        # Silero VAD runs and correctly finds no speech
+        segments = detect_speech_segments(fan_noise, sample_rate=sample_rate)
+        assert segments == []
+        assert not is_speech_present(fan_noise, sample_rate=sample_rate)
+
+    def test_neural_vad_falls_back_to_energy_when_neural_vad_raises_exception(
+        self, monkeypatch
+    ):
+        """When Neural VAD raises an exception / fails to load, it falls back to energy/spectral VAD."""
+        from scribe_dictation.audio import vad
+
+        def _mock_failing_neural(audio, sample_rate, config):
+            return None
+
+        monkeypatch.setattr(vad, "_neural_vad_segments", _mock_failing_neural)
+
+        speech = _generate_synthetic_speech(duration=1.0, sample_rate=16000)
+        # Should cleanly fallback to energy VAD
+        segments = vad.detect_speech_segments(speech, sample_rate=16000)
+        assert len(segments) > 0
 
 
 class TestServicesVADIntegration:
@@ -274,8 +314,16 @@ class TestServicesVADIntegration:
         import soundfile as sf
         import scribe_dictation.audio.capture as capture
         from scribe_dictation.audio.capture import AudioRecorder
+        from scribe_dictation.audio import vad
 
         monkeypatch.setattr(capture, "DATA_DIR", tmp_path)
+        # Mock neural VAD to simulate speech detection on synthetic audio
+        monkeypatch.setattr(
+            vad,
+            "_neural_vad_segments",
+            lambda audio, sr, cfg: [(int(0.35 * sr), int(1.35 * sr))],
+        )
+
         recorder = AudioRecorder(sample_rate=16000, channels=1)
         recorder._is_recording = True
 

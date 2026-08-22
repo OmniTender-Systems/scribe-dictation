@@ -19,10 +19,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QGraphicsDropShadowEffect,
 )
-from scribe_dictation.licensing import LicenseService
+from scribe_dictation.licensing import LicenseService, BUY_URL
 from scribe_dictation.licensing.hardware import get_machine_fingerprint
-
-BUY_URL = "https://gumroad.com/l/eyiexi"
 
 
 class ActivationDialog(QDialog):

@@ -54,6 +54,15 @@ from PySide6.QtWidgets import (
 )
 
 from scribe_dictation.audio.capture import AudioRecorder
+from scribe_dictation.audio.sound_bank import (
+    DEFAULT_SOUND_THEME,
+    FREE_SOUND_THEMES,
+    SETTINGS_SOUND_THEME,
+    SOUND_THEMES,
+    play_sound as _bank_play_sound,
+    preview_sound as _bank_preview_sound,
+)
+
 from scribe_dictation.export import (
     Segment,
     TranscriptionResult,
@@ -95,6 +104,7 @@ from scribe_dictation.ui.transform_palette import (
 from scribe_dictation.ui.visualizer import AudioWaveformRibbon
 from scribe_dictation.ui.vocabulary_dialog import VocabularyDialog
 from scribe_dictation.ui.voice_lab_dialog import VoiceLabDialog
+from scribe_dictation.updater import CURRENT_VERSION, fetch_latest_release_info
 
 APP_NAME = "Privacy Scribe"
 ORGANIZATION = "PrivacyScribe"
@@ -104,6 +114,7 @@ SETTINGS_AUTO_PASTE = "auto_paste"
 SETTINGS_USE_LOCAL = "use_local"
 SETTINGS_LOCAL_MODEL_SIZE = "local_model_size"
 SETTINGS_PLAY_SOUNDS = "play_sounds"
+SETTINGS_AUTO_UPDATE = "auto_update"
 SETTINGS_HISTORY_LIMIT = "history_limit"
 SETTINGS_SHOW_MENU_BAR = "show_menu_bar"
 SETTINGS_FORMATTING_MODE = "formatting_mode"
@@ -148,109 +159,9 @@ SUPPORTED_HOTKEYS = [
 ]
 
 
-# Pre-cached in-memory WAV byte buffers for instantaneous zero-latency playback
-_TAPE_PRESS_WAV = None
-_TAPE_RELEASE_WAV = None
-
-
-def _get_tape_sounds():
-    """Synthesize authentic, punchy tape-recorder physical button click/clunk sounds."""
-    global _TAPE_PRESS_WAV, _TAPE_RELEASE_WAV
-    if _TAPE_PRESS_WAV is not None and _TAPE_RELEASE_WAV is not None:
-        return _TAPE_PRESS_WAV, _TAPE_RELEASE_WAV
-
-    import io
-    import math
-    import random
-    import struct
-    import wave
-
-    sample_rate = 44100
-    rng = random.Random(42)
-
-    def generate_wav(samples):
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as f:
-            f.setnchannels(1)
-            f.setsampwidth(2)
-            f.setframerate(sample_rate)
-            raw = bytearray()
-            for s in samples:
-                val = int(max(-1.0, min(1.0, s)) * 32767)
-                raw.extend(struct.pack("<h", val))
-            f.writeframes(raw)
-        return buf.getvalue()
-
-    # ── Tape Button Press / Punch In (~85ms) ──────────────────────────
-    # 1. Plastic switch pre-travel click (high freq 2800-4500Hz noise & snap)
-    # 2. Heavy solenoid/tape head carrier latch (120-180Hz hollow punch)
-    # 3. Metallic leaf-spring contact ring (950Hz resonance)
-    dur_press = 0.085
-    n_press = int(dur_press * sample_rate)
-    press_samples = [0.0] * n_press
-    for i in range(n_press):
-        t = i / sample_rate
-        # Transient snap
-        snap_env = math.exp(-t * 180.0)
-        snap_noise = (rng.random() * 2 - 1) * snap_env * 0.45
-        snap_tone = math.sin(2 * math.pi * 3400 * t) * snap_env * 0.35
-
-        # Solenoid / Head carrier thud punch (dual pitch drop 180Hz -> 85Hz)
-        pitch = 180.0 * math.exp(-t * 25.0)
-        thud_env = math.exp(-t * 38.0)
-        thud = math.sin(2 * math.pi * pitch * t) * thud_env * 0.75
-
-        # Metal casing resonance
-        case_env = math.exp(-t * 60.0)
-        case_res = math.sin(2 * math.pi * 920 * t) * case_env * 0.25
-
-        press_samples[i] = snap_noise + snap_tone + thud + case_res
-
-    # ── Tape Button Release / Punch Out (~95ms) ───────────────────────
-    # 1. Mechanical spring unlock snap (quick high-pitch metallic click)
-    # 2. Cassette spring pushback clunk (hollow chassis clack at 240Hz & 650Hz)
-    dur_rel = 0.095
-    n_rel = int(dur_rel * sample_rate)
-    rel_samples = [0.0] * n_rel
-    for i in range(n_rel):
-        t = i / sample_rate
-        snap_env = math.exp(-t * 220.0)
-        snap_noise = (rng.random() * 2 - 1) * snap_env * 0.5
-        snap_click = math.sin(2 * math.pi * 2600 * t) * snap_env * 0.4
-
-        clunk_env = math.exp(-t * 32.0)
-        clunk_low = math.sin(2 * math.pi * 140 * t) * clunk_env * 0.65
-        chassis_body = math.sin(2 * math.pi * 620 * t) * math.exp(-t * 50.0) * 0.35
-
-        rel_samples[i] = snap_noise + snap_click + clunk_low + chassis_body
-
-    _TAPE_PRESS_WAV = generate_wav(press_samples)
-    _TAPE_RELEASE_WAV = generate_wav(rel_samples)
-    return _TAPE_PRESS_WAV, _TAPE_RELEASE_WAV
-
-
-def _play_sound(start: bool):
-    """Play a clean, subtle audio click when starting or stopping recording."""
-    try:
-        settings = QSettings(ORGANIZATION, APP_NAME)
-        val = settings.value(SETTINGS_PLAY_SOUNDS, True)
-        if isinstance(val, str) and val.lower() == "false":
-            return
-        elif isinstance(val, bool) and not val:
-            return
-
-        import sys
-
-        if sys.platform == "win32":
-            import winsound
-
-            freq = 1200 if start else 850
-            dur_ms = 35
-            threading.Thread(
-                target=winsound.Beep, args=(freq, dur_ms), daemon=True
-            ).start()
-    except Exception as e:
-        print(f"Failed to play sound: {e}")
+def _play_sound(start: bool, is_pro: Optional[bool] = None):
+    """Play the configured audio cue when starting or stopping recording."""
+    _bank_play_sound(start, is_pro=is_pro)
 
 
 def _is_hotkey_match(hotkey_type, current_keys, key=None):
@@ -664,10 +575,58 @@ class SettingsDialog(QDialog):
         )
         layout.addRow(self.play_sounds_check)
 
+        # Sound Theme Selection with Live Audition Buttons
+        sound_layout = QHBoxLayout()
+        self.sound_theme_combo = QComboBox()
+        self.sound_theme_combo.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+
+        for theme_id, theme in SOUND_THEMES.items():
+            if is_pro:
+                label = f"{theme.name} ({theme.category})"
+            else:
+                if theme.tier == "free":
+                    label = f"{theme.name} ({theme.category})"
+                elif theme.tier == "basic":
+                    label = f"{theme.name} (🔒 Basic - {theme.category})"
+                else:
+                    label = f"{theme.name} (🔒 Pro - {theme.category})"
+            self.sound_theme_combo.addItem(label, theme_id)
+
+        saved_theme = self.settings.value(SETTINGS_SOUND_THEME, DEFAULT_SOUND_THEME)
+        if not is_pro and saved_theme not in FREE_SOUND_THEMES:
+            saved_theme = DEFAULT_SOUND_THEME
+        idx = self.sound_theme_combo.findData(saved_theme)
+        if idx >= 0:
+            self.sound_theme_combo.setCurrentIndex(idx)
+
+        self.btn_preview_start = QPushButton("▶ Start")
+        self.btn_preview_start.setToolTip("Audition recording activation sound")
+        self.btn_preview_start.setFixedHeight(24)
+        self.btn_preview_start.clicked.connect(self._preview_start_sound)
+
+        self.btn_preview_stop = QPushButton("■ Stop")
+        self.btn_preview_stop.setToolTip("Audition recording deactivation sound")
+        self.btn_preview_stop.setFixedHeight(24)
+        self.btn_preview_stop.clicked.connect(self._preview_stop_sound)
+
+        sound_layout.addWidget(self.sound_theme_combo)
+        sound_layout.addWidget(self.btn_preview_start)
+        sound_layout.addWidget(self.btn_preview_stop)
+        layout.addRow("Sound Theme:", sound_layout)
+
+        self.auto_update_check = QCheckBox("Automatically check for updates on startup")
+        self.auto_update_check.setChecked(
+            self.settings.value(SETTINGS_AUTO_UPDATE, "true") == "true"
+        )
+        layout.addRow(self.auto_update_check)
+
         # Global Hotkey Selection
         self.hotkey_combo = QComboBox()
         for hk in SUPPORTED_HOTKEYS:
             self.hotkey_combo.addItem(hk, hk)
+
         saved_hotkey = self.settings.value("global_hotkey", DEFAULT_GLOBAL_HOTKEY)
         self.hotkey_combo.setCurrentText(saved_hotkey)
         layout.addRow("Global Hotkey:", self.hotkey_combo)
@@ -807,6 +766,14 @@ class SettingsDialog(QDialog):
         except Exception:
             pass
 
+    def _preview_start_sound(self):
+        theme_id = self.sound_theme_combo.currentData() or DEFAULT_SOUND_THEME
+        _bank_preview_sound(theme_id, start=True)
+
+    def _preview_stop_sound(self):
+        theme_id = self.sound_theme_combo.currentData() or DEFAULT_SOUND_THEME
+        _bank_preview_sound(theme_id, start=False)
+
     def _save(self):
         is_pro = is_offline_cache_valid()
         use_local = self.mode_combo.currentData() == "local"
@@ -836,6 +803,26 @@ class SettingsDialog(QDialog):
             SETTINGS_PLAY_SOUNDS,
             "true" if self.play_sounds_check.isChecked() else "false",
         )
+        selected_theme = self.sound_theme_combo.currentData()
+        if not is_pro and selected_theme not in FREE_SOUND_THEMES:
+            theme_obj = SOUND_THEMES.get(selected_theme)
+            theme_name = theme_obj.name if theme_obj else selected_theme
+            tier_name = "Pro" if (theme_obj and theme_obj.tier == "pro") else "Basic"
+            QMessageBox.information(
+                self,
+                f"{tier_name} Sound Theme",
+                f"The '{theme_name}' sound theme is exclusive to Privacy Scribe {tier_name}.\n\n"
+                "Free Edition includes 3 core sounds (Classic Beep, Subtle Tick, Soft Chime).\n"
+                "Upgrade to unlock the full acoustic library.\n\n"
+                "Defaulting to Classic Beep & Boop.",
+            )
+            selected_theme = DEFAULT_SOUND_THEME
+        self.settings.setValue(SETTINGS_SOUND_THEME, selected_theme)
+        self.settings.setValue(
+            SETTINGS_AUTO_UPDATE,
+            "true" if self.auto_update_check.isChecked() else "false",
+        )
+
         self.settings.setValue("global_hotkey", self.hotkey_combo.currentText())
         self.settings.setValue(SETTINGS_HISTORY_LIMIT, self.history_combo.currentData())
         self.settings.setValue(
@@ -927,6 +914,9 @@ class ScribeDictationWindow(QMainWindow):
         self._set_menu_bar_visible(self._is_menu_bar_visible())
         self._update_hotkey_label()
         self._update_status(self.STATUS_IDLE)
+
+        if self.settings.value(SETTINGS_AUTO_UPDATE, "true") == "true":
+            self._check_for_updates_background()
 
     def _is_menu_bar_visible(self) -> bool:
         return self.settings.value(SETTINGS_SHOW_MENU_BAR, "true") == "true"
@@ -1275,6 +1265,10 @@ class ScribeDictationWindow(QMainWindow):
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
+        check_updates_action = QAction("🔄 Check for &Updates...", self)
+        check_updates_action.triggered.connect(self._check_for_updates_manual)
+        help_menu.addAction(check_updates_action)
+
         help_menu.addSeparator()
         if self._is_pro():
             deactivate_action = QAction("Deactivate &Pro License...", self)
@@ -1288,6 +1282,68 @@ class ScribeDictationWindow(QMainWindow):
             activate_action = QAction("🔑 &Activate Pro License...", self)
             activate_action.triggered.connect(self._open_activation)
             help_menu.addAction(activate_action)
+
+    def _check_for_updates_background(self):
+        """Silently check for GitHub releases in a background daemon thread."""
+
+        def worker():
+            info = fetch_latest_release_info(timeout=4.0)
+            if info:
+                QMetaObject.invokeMethod(
+                    self,
+                    "_prompt_update_available",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, info.get("tag_name", "")),
+                    Q_ARG(str, info.get("html_url", "")),
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    @Slot(str, str)
+    def _prompt_update_available(self, tag_name: str, url: str):
+        """Prompt user when a new release is detected."""
+        reply = QMessageBox.information(
+            self,
+            "Update Available",
+            f"🎉 A new version of Privacy Scribe ({tag_name}) is available!\n\n"
+            "Would you like to open the download page to update now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            QDesktopServices.openUrl(QUrl(url))
+
+    def _check_for_updates_manual(self):
+        """Manual update check triggered by user."""
+        self._update_status("Checking for updates...")
+
+        def worker():
+            info = fetch_latest_release_info(timeout=5.0)
+            if info:
+                QMetaObject.invokeMethod(
+                    self,
+                    "_prompt_update_available",
+                    Qt.ConnectionType.QueuedConnection,
+                    Q_ARG(str, info.get("tag_name", "")),
+                    Q_ARG(str, info.get("html_url", "")),
+                )
+            else:
+                QMetaObject.invokeMethod(
+                    self,
+                    "_show_up_to_date_message",
+                    Qt.ConnectionType.QueuedConnection,
+                )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    @Slot()
+    def _show_up_to_date_message(self):
+        QMessageBox.information(
+            self,
+            "You're Up to Date",
+            f"Privacy Scribe v{CURRENT_VERSION} is currently the latest version.",
+        )
+        self._update_status("Privacy Scribe is up to date.")
 
     def _open_profiles_dialog(self):
         dialog = ProfilesDialog(self.profile_manager, self)
@@ -1303,7 +1359,7 @@ class ScribeDictationWindow(QMainWindow):
         self._setup_transcriber()
 
     def _open_voice_lab_dialog(self):
-        dialog = VoiceLabDialog(self._recorder, self)
+        dialog = VoiceLabDialog(self)
         dialog.exec()
 
     def _open_archive_dialog(self):
@@ -1533,6 +1589,9 @@ class ScribeDictationWindow(QMainWindow):
 
         settings_action = menu.addAction("Settings...")
         settings_action.triggered.connect(self._open_settings)
+
+        update_action = menu.addAction("🔄 Check for Updates...")
+        update_action.triggered.connect(self._check_for_updates_manual)
 
         menu.addSeparator()
 

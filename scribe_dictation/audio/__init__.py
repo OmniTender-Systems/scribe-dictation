@@ -15,6 +15,21 @@ from scribe_dictation.audio.vad import (
     process_audio,
 )
 
+from scribe_dictation.audio.sound_bank import (
+    DEFAULT_SOUND_THEME,
+    FREE_SOUND_THEMES,
+    PRO_SOUND_THEMES,
+    SETTINGS_SOUND_THEME,
+    SOUND_THEMES,
+    SoundTheme,
+    get_sound_theme,
+    get_sound_themes_for_tier,
+    get_theme_wav_buffers,
+    list_sound_themes,
+    play_sound,
+    preview_sound,
+)
+
 __all__ = [
     "AudioRecorder",
     "record_until_silence",
@@ -27,4 +42,16 @@ __all__ = [
     "is_speech_present",
     "normalize_loudness",
     "process_audio",
+    "SoundTheme",
+    "SOUND_THEMES",
+    "FREE_SOUND_THEMES",
+    "PRO_SOUND_THEMES",
+    "DEFAULT_SOUND_THEME",
+    "SETTINGS_SOUND_THEME",
+    "get_sound_theme",
+    "list_sound_themes",
+    "get_sound_themes_for_tier",
+    "get_theme_wav_buffers",
+    "play_sound",
+    "preview_sound",
 ]
