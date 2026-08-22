@@ -54,13 +54,59 @@ def fetch_latest_release_info(timeout: float = 4.0) -> Optional[dict]:
                 data = json.loads(resp.read().decode("utf-8"))
                 tag_name = data.get("tag_name", "")
                 if tag_name and is_newer_version(tag_name, CURRENT_VERSION):
+                    # Extract setup exe asset URL
+                    download_url = ""
+                    for asset in data.get("assets", []):
+                        asset_name = asset.get("name", "")
+                        if (
+                            asset_name.endswith(".exe")
+                            and "setup" in asset_name.lower()
+                        ):
+                            download_url = asset.get("browser_download_url", "")
+                            break
+                    if not download_url:
+                        # Fallback to any exe
+                        for asset in data.get("assets", []):
+                            if asset.get("name", "").endswith(".exe"):
+                                download_url = asset.get("browser_download_url", "")
+                                break
                     return {
                         "tag_name": tag_name,
                         "name": data.get("name", tag_name),
                         "html_url": data.get("html_url", LATEST_RELEASE_URL),
+                        "download_url": download_url,
                         "body": data.get("body", ""),
                         "published_at": data.get("published_at", ""),
                     }
     except Exception as e:
         logger.debug(f"Update check failed (offline or rate limited): {e}")
     return None
+
+
+def download_and_install_update(download_url: str) -> bool:
+    """Download the installer and launch it to perform self-update."""
+    if not download_url:
+        logger.error("No download URL provided for update.")
+        return False
+
+    try:
+        import os
+        import subprocess
+        import tempfile
+
+        temp_dir = tempfile.gettempdir()
+        installer_path = os.path.join(temp_dir, "PrivacyScribe-Setup-Update.exe")
+
+        req = urllib.request.Request(
+            download_url, headers={"User-Agent": f"PrivacyScribe/{CURRENT_VERSION}"}
+        )
+        with urllib.request.urlopen(req, timeout=60.0) as response:
+            with open(installer_path, "wb") as f:
+                f.write(response.read())
+
+        # Start the installer as a detached process and return success so app can exit
+        subprocess.Popen([installer_path, "/SILENT"], close_fds=True)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to download or run update installer: {e}")
+        return False
