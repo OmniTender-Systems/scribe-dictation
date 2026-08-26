@@ -31,6 +31,8 @@ from PySide6.QtGui import (
     QGuiApplication,
     QKeySequence,
     QShortcut,
+    QStandardItem,
+    QStandardItemModel,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -590,7 +592,9 @@ class SettingsDialog(QDialog):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
 
+        combo_model = QStandardItemModel(self.sound_theme_combo)
         for theme_id, theme in SOUND_THEMES.items():
+            locked = not is_pro and theme.tier != "free"
             if is_pro:
                 label = f"{theme.name} ({theme.category})"
             else:
@@ -600,7 +604,17 @@ class SettingsDialog(QDialog):
                     label = f"{theme.name} (🔒 Basic - {theme.category})"
                 else:
                     label = f"{theme.name} (🔒 Pro - {theme.category})"
-            self.sound_theme_combo.addItem(label, theme_id)
+            item = QStandardItem(label)
+            item.setData(theme_id, Qt.ItemDataRole.UserRole)
+            if locked:
+                # Locked themes are shown for visibility but can't be selected,
+                # since actual playback silently reverts them to the default
+                # sound for non-Pro/Basic users — selecting one here used to
+                # look like it worked (preview played it) but never played
+                # during real recording.
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            combo_model.appendRow(item)
+        self.sound_theme_combo.setModel(combo_model)
 
         saved_theme = self.settings.value(SETTINGS_SOUND_THEME, DEFAULT_SOUND_THEME)
         if not is_pro and saved_theme not in FREE_SOUND_THEMES:
