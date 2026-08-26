@@ -35,6 +35,7 @@ zero-I/O playback.
 
 from dataclasses import dataclass
 import io
+import logging
 import math
 import os
 import random
@@ -48,6 +49,27 @@ from PySide6.QtCore import QSettings
 
 ORGANIZATION = "PrivacyScribe"
 APP_NAME = "Privacy Scribe"
+
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    try:
+        log_dir = os.path.join(
+            os.environ.get("LOCALAPPDATA")
+            or os.environ.get("APPDATA")
+            or os.path.expanduser("~"),
+            "PrivacyScribe",
+        )
+        os.makedirs(log_dir, exist_ok=True)
+        _handler = logging.FileHandler(
+            os.path.join(log_dir, "sound.log"), encoding="utf-8"
+        )
+        _handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+        )
+        logger.addHandler(_handler)
+        logger.setLevel(logging.DEBUG)
+    except Exception:
+        pass
 SETTINGS_PLAY_SOUNDS = "play_sounds"
 SETTINGS_SOUND_THEME = "sound_theme"
 SETTINGS_SOUND_VOLUME = "sound_volume"
@@ -922,12 +944,13 @@ def _play_wav_buffer_win32(wav_bytes: bytes):
         flags = winsound.SND_MEMORY | winsound.SND_ASYNC | winsound.SND_NODEFAULT
         winsound.PlaySound(wav_bytes, flags)
     except Exception:
+        logger.exception("winsound.PlaySound(SND_MEMORY) failed, falling back to Beep")
         try:
             import winsound
 
             winsound.Beep(1000, 30)
         except Exception:
-            pass
+            logger.exception("winsound.Beep fallback also failed")
 
 
 def _play_wav_buffer_crossplatform(wav_bytes: bytes):
@@ -1029,9 +1052,10 @@ def play_sound(
         if not target_wav:
             return
 
+        logger.debug("play_sound start=%s theme=%s volume=%s", start, theme_id, volume)
         _play_wav_buffer_crossplatform(target_wav)
-    except Exception as e:
-        print(f"Failed to play sound ({theme_id}): {e}")
+    except Exception:
+        logger.exception("Failed to play sound (%s)", theme_id)
 
 
 def preview_sound(theme_id: str, start: bool = True, volume: Optional[int] = None):
@@ -1055,9 +1079,12 @@ def preview_sound(theme_id: str, start: bool = True, volume: Optional[int] = Non
         if not target_wav:
             return
 
+        logger.debug(
+            "preview_sound start=%s theme=%s volume=%s", start, theme_id, volume
+        )
         _play_wav_buffer_crossplatform(target_wav)
-    except Exception as e:
-        print(f"Failed to preview sound ({theme_id}): {e}")
+    except Exception:
+        logger.exception("Failed to preview sound (%s)", theme_id)
 
 
 __all__ = [
