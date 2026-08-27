@@ -937,20 +937,33 @@ def _apply_volume(wav_bytes: bytes, volume_percent: int) -> bytes:
 
 
 def _play_wav_buffer_win32(wav_bytes: bytes):
-    """Play WAV buffer asynchronously on Windows via winsound PlaySound."""
-    try:
-        import winsound
+    """Play WAV buffer on Windows via winsound PlaySound.
 
-        flags = winsound.SND_MEMORY | winsound.SND_ASYNC | winsound.SND_NODEFAULT
-        winsound.PlaySound(wav_bytes, flags)
-    except Exception:
-        logger.exception("winsound.PlaySound(SND_MEMORY) failed, falling back to Beep")
+    winsound.PlaySound raises RuntimeError if SND_MEMORY is combined with
+    SND_ASYNC (CPython refuses this because the buffer could be garbage
+    collected while Windows is still playing from it asynchronously). Play
+    synchronously instead, off the calling thread, so the GUI never blocks
+    and the buffer stays alive for the duration of playback.
+    """
+
+    def _blocking_play():
         try:
             import winsound
 
-            winsound.Beep(1000, 30)
+            flags = winsound.SND_MEMORY | winsound.SND_NODEFAULT
+            winsound.PlaySound(wav_bytes, flags)
         except Exception:
-            logger.exception("winsound.Beep fallback also failed")
+            logger.exception(
+                "winsound.PlaySound(SND_MEMORY) failed, falling back to Beep"
+            )
+            try:
+                import winsound
+
+                winsound.Beep(1000, 30)
+            except Exception:
+                logger.exception("winsound.Beep fallback also failed")
+
+    threading.Thread(target=_blocking_play, daemon=True).start()
 
 
 def _play_wav_buffer_crossplatform(wav_bytes: bytes):
