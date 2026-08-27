@@ -109,6 +109,7 @@ from scribe_dictation.ui.transform_palette import (
 )
 from scribe_dictation.ui.visualizer import AudioWaveformRibbon
 from scribe_dictation.ui.vocabulary_dialog import VocabularyDialog
+from scribe_dictation.transcribe.vocabulary import diff_corrections
 from scribe_dictation.ui.voice_lab_dialog import VoiceLabDialog
 from scribe_dictation.updater import (
     CURRENT_VERSION,
@@ -1123,7 +1124,6 @@ class ScribeDictationWindow(QMainWindow):
 
         # Text display area
         self.text_display = QPlainTextEdit()
-        self.text_display.setReadOnly(True)
         self.text_display.setPlaceholderText("Transcribed text will appear here...")
         self.text_display.setMinimumHeight(24)
         self.text_display.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -1959,6 +1959,38 @@ class ScribeDictationWindow(QMainWindow):
         thread = threading.Thread(target=run_transcribe, daemon=True)
         thread.start()
 
+    def _learn_from_last_edit(self):
+        """Diff any user edit made to the most recent transcription entry.
+
+        Compares the last entry in ``_transcription_history`` against what is
+        currently shown in ``text_display`` (the user may have hand-corrected
+        it before the next transcription arrives) and feeds any small,
+        repeated substitutions into the vocabulary manager's learned
+        corrections so they auto-apply in future transcriptions.
+        """
+        if not self._transcription_history or not hasattr(self, "vocabulary_manager"):
+            return
+
+        expected_previous = "\n\n".join(self._transcription_history)
+        current = self.text_display.toPlainText()
+        if current == expected_previous:
+            return
+
+        prior_entries = self._transcription_history[:-1]
+        prefix = "\n\n".join(prior_entries)
+        if prior_entries and not current.startswith(prefix):
+            return
+
+        edited_last = current[len(prefix) :].lstrip("\n") if prior_entries else current
+        original_last = self._transcription_history[-1]
+
+        for orig_phrase, corrected_phrase in diff_corrections(
+            original_last, edited_last
+        ):
+            self.vocabulary_manager.record_correction(orig_phrase, corrected_phrase)
+
+        self.vocabulary_manager.save()
+
     @Slot(str)
     def _on_transcription_complete(self, text: str):
         text = text.strip()
@@ -2008,6 +2040,7 @@ class ScribeDictationWindow(QMainWindow):
         if hasattr(self, "visualizer_ribbon"):
             self.visualizer_ribbon.set_active(False)
             self.visualizer_ribbon.setVisible(False)
+        self._learn_from_last_edit()
         self._transcription_history.append(text)
         if self._history_limit > 0:
             self._transcription_history = self._transcription_history[
