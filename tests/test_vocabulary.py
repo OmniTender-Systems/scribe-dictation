@@ -11,6 +11,7 @@ from scribe_dictation.transcribe.vocabulary import (
     ReplacementRule,
     apply_replacements,
     build_initial_prompt,
+    diff_corrections,
 )
 
 
@@ -450,3 +451,56 @@ class TestTranscribeServiceIntegration:
 
         result = await service.transcribe(str(fake_wav))
         assert result == "execute kubectl"
+
+
+class TestDiffCorrections:
+    """Tests for word-level diffing between original and edited text."""
+
+    def test_single_substitution(self):
+        pairs = diff_corrections("I use scrybe daily", "I use Scribe daily")
+        assert pairs == [("scrybe", "Scribe")]
+
+    def test_no_change_returns_empty(self):
+        assert diff_corrections("hello world", "hello world") == []
+
+    def test_large_rewrite_ignored(self):
+        original = "the quick brown fox jumps over the lazy dog"
+        edited = "a totally different sentence about something else entirely"
+        assert diff_corrections(original, edited) == []
+
+    def test_multiple_small_substitutions(self):
+        pairs = diff_corrections(
+            "meet kalindra at the offsite", "meet Kalindra at the off-site"
+        )
+        assert ("kalindra", "Kalindra") in pairs
+
+
+class TestLearnedCorrections:
+    """Tests for CustomVocabularyManager.record_correction promotion."""
+
+    def test_promotes_after_threshold(self):
+        mgr = CustomVocabularyManager(auto_load=False)
+        assert mgr.record_correction("scrybe", "Scribe") is False
+        assert mgr.record_correction("scrybe", "Scribe") is True
+
+        rules = mgr.get_replacements()
+        assert any(r.pattern == "scrybe" and r.replacement == "Scribe" for r in rules)
+
+    def test_ignored_when_identical(self):
+        mgr = CustomVocabularyManager(auto_load=False)
+        assert mgr.record_correction("scribe", "scribe") is False
+
+    def test_skips_if_rule_already_exists(self):
+        mgr = CustomVocabularyManager(
+            replacements=[ReplacementRule("scrybe", "Scribe")], auto_load=False
+        )
+        assert mgr.record_correction("scrybe", "Scribe") is False
+
+    def test_roundtrip_persists_pending_counts(self, tmp_path: Path):
+        config_path = tmp_path / "vocab.json"
+        mgr = CustomVocabularyManager(config_path=config_path, auto_load=False)
+        mgr.record_correction("scrybe", "Scribe")
+        mgr.save()
+
+        reloaded = CustomVocabularyManager(config_path=config_path, auto_load=True)
+        assert reloaded.record_correction("scrybe", "Scribe") is True

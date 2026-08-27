@@ -21,6 +21,7 @@ VOCABULARY_FILENAME = "vocabulary.json"
 SETTINGS_VOCAB_WORDS_KEY = "custom_vocabulary_words"
 SETTINGS_VOCAB_RULES_KEY = "custom_vocabulary_rules"
 MAX_PROMPT_CHARS = 1000
+CORRECTION_PROMOTION_THRESHOLD = 2
 
 
 def get_default_config_path() -> Path:
@@ -199,6 +200,56 @@ def apply_replacements(
     return result
 
 
+def diff_corrections(
+    original: str,
+    edited: str,
+    max_ratio: float = 0.5,
+) -> list[tuple[str, str]]:
+    """Extract small (original -> edited) phrase substitutions from a user edit.
+
+    Compares ``original`` and ``edited`` word-by-word and returns the
+    substituted spans. If the edit is too extensive (a near-total rewrite,
+    as measured by the fraction of words changed exceeding ``max_ratio``),
+    an empty list is returned since it is unlikely to represent a
+    transcription correction.
+
+    Args:
+        original: The raw transcription text.
+        edited: The user-edited version of that text.
+        max_ratio: Maximum fraction of changed words before the edit is
+            treated as a rewrite rather than a correction.
+
+    Returns:
+        List of (original_phrase, corrected_phrase) tuples.
+    """
+    import difflib
+
+    orig_words = original.split()
+    edit_words = edited.split()
+    if not orig_words or not edit_words or orig_words == edit_words:
+        return []
+
+    matcher = difflib.SequenceMatcher(a=orig_words, b=edit_words, autojunk=False)
+    changed = sum(
+        max(i2 - i1, j2 - j1)
+        for op, i1, i2, j1, j2 in matcher.get_opcodes()
+        if op != "equal"
+    )
+    if changed / max(len(orig_words), len(edit_words)) > max_ratio:
+        return []
+
+    pairs: list[tuple[str, str]] = []
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op != "replace":
+            continue
+        orig_phrase = " ".join(orig_words[i1:i2]).strip()
+        edit_phrase = " ".join(edit_words[j1:j2]).strip()
+        if orig_phrase and edit_phrase:
+            pairs.append((orig_phrase, edit_phrase))
+
+    return pairs
+
+
 class CustomVocabularyManager:
     """Manages custom vocabulary terms and post-transcription replacement rules.
 
@@ -229,6 +280,7 @@ class CustomVocabularyManager:
         """
         self._words: list[str] = []
         self._rules: list[ReplacementRule] = []
+        self._correction_counts: dict[str, int] = {}
         self._base_prompt: str = base_prompt or ""
         self._config_path: Optional[Path] = (
             Path(config_path) if config_path else get_default_config_path()
@@ -390,6 +442,40 @@ class CustomVocabularyManager:
         """Apply all configured replacement rules to the transcribed text."""
         return apply_replacements(text, self._rules)
 
+    # ── Learned Corrections ──────────────────────────────────────────
+
+    def record_correction(self, original: str, corrected: str) -> bool:
+        """Record one observed (original -> corrected) edit.
+
+        Once the same correction has been observed
+        ``CORRECTION_PROMOTION_THRESHOLD`` times, it is auto-promoted to a
+        persistent :class:`ReplacementRule` so future transcriptions are
+        corrected automatically.
+
+        Returns:
+            True if this call promoted the correction to a saved rule.
+        """
+        original = original.strip()
+        corrected = corrected.strip()
+        if not original or not corrected or original.lower() == corrected.lower():
+            return False
+
+        # Already covered by an existing rule for this exact phrase.
+        for rule in self._rules:
+            if not rule.is_regex and rule.pattern.strip().lower() == original.lower():
+                return False
+
+        key = f"{original.lower()}\x00{corrected}"
+        count = self._correction_counts.get(key, 0) + 1
+        self._correction_counts[key] = count
+
+        if count >= CORRECTION_PROMOTION_THRESHOLD:
+            self.add_replacement(pattern=original, replacement=corrected)
+            del self._correction_counts[key]
+            return True
+
+        return False
+
     # ── Persistence (JSON / QSettings) ────────────────────────────────
 
     def to_dict(self) -> dict[str, Any]:
@@ -398,6 +484,7 @@ class CustomVocabularyManager:
             "words": list(self._words),
             "replacements": [rule.to_dict() for rule in self._rules],
             "base_prompt": self._base_prompt,
+            "correction_counts": dict(self._correction_counts),
         }
 
     def from_dict(self, data: dict[str, Any]) -> None:
@@ -415,6 +502,12 @@ class CustomVocabularyManager:
 
         if "base_prompt" in data:
             self._base_prompt = str(data["base_prompt"])
+
+        counts_data = data.get("correction_counts", {})
+        if isinstance(counts_data, dict):
+            self._correction_counts = {
+                str(k): int(v) for k, v in counts_data.items() if str(k)
+            }
 
     def save(self, path: Optional[str | Path] = None) -> None:
         """Save vocabulary and replacement rules to QSettings and/or JSON file."""
