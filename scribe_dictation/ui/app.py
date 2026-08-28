@@ -1345,6 +1345,10 @@ class ScribeDictationWindow(QMainWindow):
         check_updates_action.triggered.connect(self._check_for_updates_manual)
         help_menu.addAction(check_updates_action)
 
+        setup_tutorial_action = QAction("🧭 Setup &Tutorial...", self)
+        setup_tutorial_action.triggered.connect(self._open_onboarding_wizard)
+        help_menu.addAction(setup_tutorial_action)
+
         help_menu.addSeparator()
         if self._is_pro():
             deactivate_action = QAction("Deactivate &Pro License...", self)
@@ -2163,6 +2167,15 @@ class ScribeDictationWindow(QMainWindow):
             self._setup_global_hotkey()
             self._update_hotkey_label()
 
+    def _open_onboarding_wizard(self):
+        from scribe_dictation.ui.onboarding_wizard import OnboardingWizard
+
+        wizard = OnboardingWizard(
+            vocabulary_manager=getattr(self, "vocabulary_manager", None), parent=self
+        )
+        wizard.exec()
+        self._setup_transcriber()
+
     def _show_about(self):
         is_pro = self._is_pro()
         tier_label = (
@@ -2195,6 +2208,15 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORGANIZATION)
+
+    from scribe_dictation.ui.onboarding_wizard import (
+        OnboardingWizard,
+        should_show_onboarding,
+    )
+
+    if should_show_onboarding():
+        wizard = OnboardingWizard()
+        wizard.exec()
 
     # Launch main window (Runs out-of-the-box in Free Edition; Pro unlocks all features)
     window = ScribeDictationWindow()
