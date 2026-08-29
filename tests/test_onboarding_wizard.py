@@ -93,3 +93,24 @@ class TestWizardConstruction:
         wizard = OnboardingWizard()
         wizard._on_finished(QWizard.DialogCode.Rejected)
         assert clean_settings.value(SETTINGS_FIRST_RUN_COMPLETE) == "true"
+
+
+class TestHotkeyPageDispatch:
+    """Regression test: _start_global_hotkey dispatches by Qt slot name via
+    QMetaObject.invokeMethod, so the press callback MUST be a real @Slot or
+    the dispatch silently no-ops and the hotkey page never completes.
+    """
+
+    def test_on_press_is_invokable_by_name(self, qapp):
+        from PySide6.QtCore import QMetaObject, Qt
+
+        from scribe_dictation.ui.onboarding_wizard import HotkeyPage
+
+        page = HotkeyPage()
+        assert page._detected is False
+
+        invoked = QMetaObject.invokeMethod(
+            page, "_on_press", Qt.ConnectionType.DirectConnection
+        )
+        assert invoked is True
+        assert page._detected is True

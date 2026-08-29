@@ -301,6 +301,7 @@ class HotkeyPage(QWizardPage):
                 "try it once setup is finished."
             )
 
+    @Slot()
     def _on_press(self):
         self.hotkey_detected.emit()
 
