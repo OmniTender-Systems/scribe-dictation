@@ -90,6 +90,9 @@ class ModePage(QWizardPage):
         self.api_key_input.setPlaceholderText("sk-...")
         layout.addRow("API Key:", self.api_key_input)
 
+        self.model_size_label = layout.labelForField(self.model_size_combo)
+        self.api_key_label = layout.labelForField(self.api_key_input)
+
         self.mode_combo.currentIndexChanged.connect(self._toggle_fields)
         self._toggle_fields()
 
@@ -98,7 +101,11 @@ class ModePage(QWizardPage):
     def _toggle_fields(self):
         is_local = self.mode_combo.currentData() == "local"
         self.model_size_combo.setVisible(is_local)
+        if self.model_size_label:
+            self.model_size_label.setVisible(is_local)
         self.api_key_input.setVisible(not is_local)
+        if self.api_key_label:
+            self.api_key_label.setVisible(not is_local)
 
     def is_local(self) -> bool:
         return self.mode_combo.currentData() == "local"

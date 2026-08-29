@@ -114,3 +114,24 @@ class TestHotkeyPageDispatch:
         )
         assert invoked is True
         assert page._detected is True
+
+
+class TestModePageLabelVisibility:
+    """Regression test: hiding the API key / model size fields must also
+    hide their QFormLayout row labels, or the label ("API Key:") is left
+    dangling above an invisible field, confusing users.
+    """
+
+    def test_api_key_label_hidden_in_local_mode(self, qapp):
+        page = ModePage()
+        idx = page.mode_combo.findData("local")
+        page.mode_combo.setCurrentIndex(idx)
+        assert page.api_key_input.isVisible() is False
+        assert page.api_key_label.isVisible() is False
+
+    def test_model_size_label_hidden_in_api_mode(self, qapp):
+        page = ModePage()
+        idx = page.mode_combo.findData("api")
+        page.mode_combo.setCurrentIndex(idx)
+        assert page.model_size_combo.isVisible() is False
+        assert page.model_size_label.isVisible() is False
