@@ -122,6 +122,7 @@ ORGANIZATION = "PrivacyScribe"
 SETTINGS_API_KEY = "api_key"
 SETTINGS_DEVICE = "audio_device"
 SETTINGS_AUTO_PASTE = "auto_paste"
+SETTINGS_QUICK_REVIEW = "quick_review_toast"
 SETTINGS_USE_LOCAL = "use_local"
 SETTINGS_LOCAL_MODEL_SIZE = "local_model_size"
 SETTINGS_PLAY_SOUNDS = "play_sounds"
@@ -580,6 +581,14 @@ class SettingsDialog(QDialog):
         )
         layout.addRow(self.auto_paste_check)
 
+        self.quick_review_check = QCheckBox(
+            "Show a quick review popup after auto-paste (helps the app learn corrections)"
+        )
+        self.quick_review_check.setChecked(
+            self.settings.value(SETTINGS_QUICK_REVIEW, "true") == "true"
+        )
+        layout.addRow(self.quick_review_check)
+
         self.play_sounds_check = QCheckBox("Play sound on start/stop recording")
         self.play_sounds_check.setChecked(
             self.settings.value(SETTINGS_PLAY_SOUNDS, "true") == "true"
@@ -857,6 +866,10 @@ class SettingsDialog(QDialog):
         self.settings.setValue(
             SETTINGS_AUTO_PASTE,
             "true" if self.auto_paste_check.isChecked() else "false",
+        )
+        self.settings.setValue(
+            SETTINGS_QUICK_REVIEW,
+            "true" if self.quick_review_check.isChecked() else "false",
         )
         self.settings.setValue(
             SETTINGS_PLAY_SOUNDS,
@@ -2102,6 +2115,31 @@ class ScribeDictationWindow(QMainWindow):
             from PySide6.QtCore import QTimer
 
             QTimer.singleShot(150, lambda: _simulate_paste(target_hwnd))
+
+            # With auto-paste on, the user's edits (if any) happen in the
+            # target app, invisible to us -- show a quick, non-activating
+            # review toast so we still have a chance to learn corrections.
+            show_review = self.settings.value(SETTINGS_QUICK_REVIEW, "true") == "true"
+            if show_review:
+                self._show_review_toast(text)
+
+    def _show_review_toast(self, original_text: str):
+        from scribe_dictation.ui.review_toast import ReviewToast
+
+        toast = ReviewToast(original_text, parent=None)
+        toast.reviewed.connect(self._on_review_toast_finished)
+        self._review_toast = toast
+        toast.show()
+
+    @Slot(str, str)
+    def _on_review_toast_finished(self, original_text: str, edited_text: str):
+        if hasattr(self, "vocabulary_manager") and self.vocabulary_manager:
+            for orig_phrase, corrected_phrase in diff_corrections(
+                original_text, edited_text
+            ):
+                self.vocabulary_manager.record_correction(orig_phrase, corrected_phrase)
+            self.vocabulary_manager.save()
+        self._review_toast = None
 
     # ── Actions ───────────────────────────────────────────────────────
 
