@@ -223,7 +223,9 @@ class MicPage(QWizardPage):
             devices = sd.query_devices()
             for i, dev in enumerate(devices):
                 if dev["max_input_channels"] > 0:
-                    self.device_combo.addItem(f"{dev['name']}", i)
+                    self.device_combo.addItem(
+                        f"{dev['name']} (API: {dev['hostapi']})", i
+                    )
         except Exception:
             pass
 
