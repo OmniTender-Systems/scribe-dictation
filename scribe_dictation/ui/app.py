@@ -108,6 +108,7 @@ from scribe_dictation.ui.transform_palette import (
     grab_selected_text,
 )
 from scribe_dictation.ui.visualizer import AudioWaveformRibbon
+from scribe_dictation.ui.xp_theme import apply_xp_theme
 from scribe_dictation.ui.vocabulary_dialog import VocabularyDialog
 from scribe_dictation.transcribe.vocabulary import diff_corrections
 from scribe_dictation.ui.voice_lab_dialog import VoiceLabDialog
@@ -2195,6 +2196,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORGANIZATION)
+    apply_xp_theme(app)
 
     # Launch main window (Runs out-of-the-box in Free Edition; Pro unlocks all features)
     window = ScribeDictationWindow()
