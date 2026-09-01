@@ -43,6 +43,7 @@ class TranscribeService:
         use_local: bool = False,
         local_model_size: str = DEFAULT_LOCAL_MODEL,
         local_device: str = "auto",
+        local_compute_type: str = "default",
         vocabulary_manager: Optional[CustomVocabularyManager] = None,
         initial_prompt: Optional[str] = None,
         language: Optional[str] = None,
@@ -59,7 +60,6 @@ class TranscribeService:
         self.language = language
         self.task = task
         self.voice_profile = voice_profile
-
 
         self._local_service: Optional[LocalWhisperService] = None
         if self.use_local:
@@ -158,7 +158,7 @@ class TranscribeService:
             and target_task.lower().strip() in ("translate", "translation")
             else "transcribe"
         )
-        
+
         effective_prompt = (
             self.voice_profile.bias_prompt() if self.voice_profile else initial_prompt
         )

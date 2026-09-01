@@ -182,7 +182,6 @@ def _play_sound(start: bool, is_pro: Optional[bool] = None):
     _bank_play_sound(start, is_pro=is_pro)
 
 
-
 def _is_hotkey_match(hotkey_type, current_keys, key=None):
     """Check if the current key combination matches the configured hotkey."""
     from pynput import keyboard
@@ -592,9 +591,6 @@ class SettingsDialog(QDialog):
         self.play_sounds_check.setChecked(
             self.settings.value(SETTINGS_PLAY_SOUNDS, "true") == "true"
         )
-        layout.addRow(self.play_sounds_check)
-
-<<<<<<< HEAD
         # Sound Theme Selection with Live Audition Buttons
         sound_layout = QHBoxLayout()
         self.sound_theme_combo = QComboBox()
@@ -688,7 +684,7 @@ class SettingsDialog(QDialog):
         update_layout.addWidget(self.auto_update_check)
         update_layout.addWidget(self.btn_check_updates)
         layout.addRow("Updates:", update_layout)
-=======
+
         # Voice profile (Pro/Lifetime only) — learns the user's vocabulary
         # locally and biases future transcriptions toward it.
         from scribe_dictation.licensing import LicenseTier, get_active_license_tier
@@ -712,8 +708,6 @@ class SettingsDialog(QDialog):
             else "Upgrade to Pro or Lifetime to unlock this feature."
         )
         layout.addRow(self.voice_learning_check)
-
->>>>>>> b35f1ae (feat: voice-learning module gated to Pro/Lifetime tiers)
         # Global Hotkey Selection
         self.hotkey_combo = QComboBox()
         for hk in SUPPORTED_HOTKEYS:
@@ -1826,13 +1820,10 @@ class ScribeDictationWindow(QMainWindow):
                 api_key=api_key,
                 use_local=use_local,
                 local_model_size=local_model_size,
-<<<<<<< HEAD
                 vocabulary_manager=self.vocabulary_manager,
                 language=language,
                 task=task,
-=======
                 voice_profile=voice_profile,
->>>>>>> b35f1ae (feat: voice-learning module gated to Pro/Lifetime tiers)
             )
         except Exception as e:
             print(f"Failed to setup transcriber: {e}")
