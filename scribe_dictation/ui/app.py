@@ -129,6 +129,7 @@ SETTINGS_DEVICE = "audio_device"
 SETTINGS_AUTO_PASTE = "auto_paste"
 SETTINGS_USE_LOCAL = "use_local"
 SETTINGS_LOCAL_MODEL_SIZE = "local_model_size"
+SETTINGS_VOICE_LEARNING = "voice_learning_enabled"
 SETTINGS_PLAY_SOUNDS = "play_sounds"
 SETTINGS_AUTO_UPDATE = "auto_update"
 SETTINGS_HISTORY_LIMIT = "history_limit"
@@ -590,8 +591,6 @@ class SettingsDialog(QDialog):
         self.play_sounds_check.setChecked(
             self.settings.value(SETTINGS_PLAY_SOUNDS, "true") == "true"
         )
-        layout.addRow(self.play_sounds_check)
-
         # Sound Theme Selection with Live Audition Buttons
         sound_layout = QHBoxLayout()
         self.sound_theme_combo = QComboBox()
@@ -685,6 +684,30 @@ class SettingsDialog(QDialog):
         update_layout.addWidget(self.auto_update_check)
         update_layout.addWidget(self.btn_check_updates)
         layout.addRow("Updates:", update_layout)
+
+        # Voice profile (Pro/Lifetime only) — learns the user's vocabulary
+        # locally and biases future transcriptions toward it.
+        from scribe_dictation.licensing import LicenseTier, get_active_license_tier
+
+        tier = get_active_license_tier()
+        self.voice_learning_check = QCheckBox(
+            "Learn my vocabulary to improve accuracy"
+            if tier.at_least(LicenseTier.PRO)
+            else "Learn my vocabulary to improve accuracy (Pro/Lifetime)"
+        )
+        self.voice_learning_check.setChecked(
+            tier.at_least(LicenseTier.PRO)
+            and self.settings.value(SETTINGS_VOICE_LEARNING, "false") == "true"
+        )
+        self.voice_learning_check.setEnabled(tier.at_least(LicenseTier.PRO))
+        self.voice_learning_check.setToolTip(
+            "100% local: tracks distinctive words across your own dictations "
+            "(names, jargon) and hints the model with them. Nothing leaves "
+            "this machine."
+            if tier.at_least(LicenseTier.PRO)
+            else "Upgrade to Pro or Lifetime to unlock this feature."
+        )
+        layout.addRow(self.voice_learning_check)
         # Global Hotkey Selection
         self.hotkey_combo = QComboBox()
         for hk in SUPPORTED_HOTKEYS:
@@ -859,6 +882,10 @@ class SettingsDialog(QDialog):
         device_id = self.device_combo.currentData()
         self.settings.setValue(
             SETTINGS_DEVICE, str(device_id) if device_id is not None else ""
+        )
+        self.settings.setValue(
+            SETTINGS_VOICE_LEARNING,
+            "true" if self.voice_learning_check.isChecked() else "false",
         )
         self.settings.setValue(
             SETTINGS_AUTO_PASTE,
@@ -1776,6 +1803,18 @@ class ScribeDictationWindow(QMainWindow):
         language = self.settings.value(SETTINGS_LANGUAGE, "auto")
         task = self.settings.value(SETTINGS_TASK, TASK_TRANSCRIBE)
 
+        voice_profile = None
+        if self.settings.value(SETTINGS_VOICE_LEARNING, "false") == "true":
+            from scribe_dictation.licensing import LicenseTier, get_active_license_tier
+            from scribe_dictation.transcribe.voice_profile import (
+                VoiceProfile,
+                default_profile_path,
+            )
+
+            tier = get_active_license_tier()
+            if tier.at_least(LicenseTier.PRO):
+                voice_profile = VoiceProfile(default_profile_path(), tier=tier)
+
         try:
             self._transcriber = TranscribeService(
                 api_key=api_key,
@@ -1784,6 +1823,7 @@ class ScribeDictationWindow(QMainWindow):
                 vocabulary_manager=self.vocabulary_manager,
                 language=language,
                 task=task,
+                voice_profile=voice_profile,
             )
         except Exception as e:
             print(f"Failed to setup transcriber: {e}")
