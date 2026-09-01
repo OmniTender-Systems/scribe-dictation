@@ -228,6 +228,23 @@ QToolTip {{
 """
 
 
+THEME_DEFAULT = "default"
+THEME_WINDOWS_XP = "windows_xp"
+
+THEME_LABELS = {
+    THEME_DEFAULT: "&Default",
+    THEME_WINDOWS_XP: "Windows &XP (Retro)",
+}
+
+
+def apply_theme(app, theme: str) -> None:
+    """Apply the given theme (by key) to the whole application."""
+    if theme == THEME_WINDOWS_XP:
+        app.setStyleSheet(XP_STYLESHEET)
+    else:
+        app.setStyleSheet("")
+
+
 def apply_xp_theme(app) -> None:
     """Apply the Windows XP retro stylesheet to the whole application."""
-    app.setStyleSheet(XP_STYLESHEET)
+    apply_theme(app, THEME_WINDOWS_XP)
