@@ -1847,6 +1847,10 @@ class ScribeDictationWindow(QMainWindow):
             self._session_started_at = time.monotonic()
         self._recording_started_at = time.monotonic()
 
+        # Let the start cue play out cleanly before opening the microphone stream,
+        # preventing acoustic feedback and device contention on cold DAC wake-up.
+        time.sleep(0.06)
+
         self._recorder = AudioRecorder(device=device)
         self._recorder.start()
 

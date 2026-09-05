@@ -108,32 +108,28 @@ def _generate_wav(samples: List[float], sample_rate: int = 44100) -> bytes:
 
 
 def _synth_classic_beep() -> Tuple[bytes, bytes]:
-    """Classic 1200Hz start / 850Hz stop clean sine beeps."""
+    """Classic clean sine beeps with warm presence (rising start / falling stop)."""
     sample_rate = 44100
-    dur = 0.035
+    dur = 0.085
     n_samples = int(dur * sample_rate)
 
-    # Start: 1200Hz
+    # Start: High, cheerful 1050Hz -> 1250Hz rising confirmation beep
     start_samples = [0.0] * n_samples
     for i in range(n_samples):
         t = i / sample_rate
-        env = (
-            (1.0 - math.cos(math.pi * min(1.0, t / 0.004))) * 0.5
-            if t < 0.004
-            else math.exp(-(t - 0.004) * 80.0)
-        )
-        start_samples[i] = math.sin(2 * math.pi * 1200 * t) * env * 0.65
+        attack = min(1.0, t / 0.006)
+        decay = math.exp(-t * 35.0)
+        freq = 1050.0 + 200.0 * (t / dur)
+        start_samples[i] = math.sin(2 * math.pi * freq * t) * attack * decay * 0.85
 
-    # Stop: 850Hz
+    # Stop: Lower, warm 680Hz -> 520Hz grounding boop
     stop_samples = [0.0] * n_samples
     for i in range(n_samples):
         t = i / sample_rate
-        env = (
-            (1.0 - math.cos(math.pi * min(1.0, t / 0.004))) * 0.5
-            if t < 0.004
-            else math.exp(-(t - 0.004) * 75.0)
-        )
-        stop_samples[i] = math.sin(2 * math.pi * 850 * t) * env * 0.65
+        attack = min(1.0, t / 0.006)
+        decay = math.exp(-t * 32.0)
+        freq = 680.0 - 160.0 * (t / dur)
+        stop_samples[i] = math.sin(2 * math.pi * freq * t) * attack * decay * 0.85
 
     return _generate_wav(start_samples, sample_rate), _generate_wav(
         stop_samples, sample_rate
@@ -145,27 +141,27 @@ def _synth_subtle_tick() -> Tuple[bytes, bytes]:
     sample_rate = 44100
     rng = random.Random(101)
 
-    # Start: 16ms crisp 1800Hz transient click
-    dur_start = 0.016
+    # Start: 35ms crisp 1600Hz transient click with solid mechanical presence
+    dur_start = 0.035
     n_start = int(dur_start * sample_rate)
     start_samples = [0.0] * n_start
     for i in range(n_start):
         t = i / sample_rate
-        env = math.exp(-t * 350.0)
+        env = math.exp(-t * 140.0)
         noise = (rng.random() * 2 - 1) * env * 0.35
-        tone = math.sin(2 * math.pi * 1800 * t) * env * 0.65
-        start_samples[i] = noise + tone
+        tone = math.sin(2 * math.pi * 1600 * t) * env * 0.65
+        start_samples[i] = (noise + tone) * 0.85
 
-    # Stop: 20ms subtle 580Hz wooden tactile tap
-    dur_stop = 0.020
+    # Stop: 40ms subtle 520Hz wooden tactile tap
+    dur_stop = 0.040
     n_stop = int(dur_stop * sample_rate)
     stop_samples = [0.0] * n_stop
     for i in range(n_stop):
         t = i / sample_rate
-        env = math.exp(-t * 220.0)
-        thud = math.sin(2 * math.pi * 580 * t) * env * 0.7
+        env = math.exp(-t * 110.0)
+        thud = math.sin(2 * math.pi * 520 * t) * env * 0.7
         body = math.sin(2 * math.pi * 180 * t) * env * 0.3
-        stop_samples[i] = thud + body
+        stop_samples[i] = (thud + body) * 0.85
 
     return _generate_wav(start_samples, sample_rate), _generate_wav(
         stop_samples, sample_rate
@@ -1046,7 +1042,13 @@ def _play_wav_buffer_sounddevice(wav_bytes: bytes) -> bool:
         silence = np.zeros((pad_len, 2), dtype=np.float32)
         samples = np.vstack([silence, samples])
 
-        sd.play(samples, play_sr, device=dev_idx)
+        def _worker():
+            try:
+                sd.play(samples, play_sr, device=dev_idx, blocking=True)
+            except Exception as exc:
+                logger.debug("sounddevice worker playback failed: %s", exc)
+
+        threading.Thread(target=_worker, daemon=True).start()
         return True
     except Exception as exc:
         logger.debug("sounddevice playback skipped or failed (%s)", exc)
