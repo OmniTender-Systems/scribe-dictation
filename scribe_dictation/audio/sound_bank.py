@@ -966,8 +966,99 @@ def _play_wav_buffer_win32(wav_bytes: bytes):
     threading.Thread(target=_blocking_play, daemon=True).start()
 
 
+def _get_sounddevice_output_target() -> Tuple[Optional[int], int]:
+    """Find the optimal output device and native hardware sample rate for low-latency playback."""
+    try:
+        import sounddevice as sd
+
+        # 1. On Windows, explicitly prioritize WASAPI then DirectSound over legacy MME
+        if sys.platform == "win32":
+            for h in sd.query_hostapis():
+                if (
+                    "WASAPI" in h.get("name", "")
+                    and h.get("default_output_device", -1) >= 0
+                ):
+                    dev_idx = h["default_output_device"]
+                    info = sd.query_devices(dev_idx)
+                    if info.get("max_output_channels", 0) > 0:
+                        return dev_idx, int(info.get("default_samplerate", 44100))
+
+            for h in sd.query_hostapis():
+                if (
+                    "DirectSound" in h.get("name", "")
+                    and h.get("default_output_device", -1) >= 0
+                ):
+                    dev_idx = h["default_output_device"]
+                    info = sd.query_devices(dev_idx)
+                    if info.get("max_output_channels", 0) > 0:
+                        return dev_idx, int(info.get("default_samplerate", 44100))
+
+        # 2. Standard default output device (macOS CoreAudio, Linux ALSA/Pulse, or default)
+        default_out = sd.default.device[1]
+        if default_out is not None and default_out >= 0:
+            info = sd.query_devices(default_out)
+            return default_out, int(info.get("default_samplerate", 44100))
+    except Exception:
+        pass
+    return None, 44100
+
+
+def _play_wav_buffer_sounddevice(wav_bytes: bytes) -> bool:
+    """Attempt playback using sounddevice (WASAPI/DirectSound/CoreAudio/Pulse).
+
+    Upmixes mono to stereo so modern multi-channel surround topologies
+    (Nahimic, SteelSeries Sonar, Realtek 7.1) do not drop or isolate the signal.
+    Resamples to the device's native hardware sample rate (e.g. 48kHz on Windows Realtek)
+    so WASAPI shared-mode streams are accepted without PaErrorCode -9997.
+    Prepends a 25ms silence ramp so hardware DACs in power-saving mode have time
+    to wake up and do not swallow short transient clicks.
+    """
+    try:
+        import sounddevice as sd
+        import numpy as np
+
+        with wave.open(io.BytesIO(wav_bytes), "rb") as w:
+            src_sr = w.getframerate()
+            n_channels = w.getnchannels()
+            frames = w.readframes(w.getnframes())
+
+        samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+
+        dev_idx, target_sr = _get_sounddevice_output_target()
+
+        # Resample if device native rate differs from WAV source rate (e.g. 44.1k -> 48k)
+        if target_sr > 0 and target_sr != src_sr:
+            num_out = int(len(samples) * target_sr / src_sr)
+            if num_out > 0:
+                samples = np.interp(
+                    np.linspace(0, len(samples), num_out, endpoint=False),
+                    np.arange(len(samples)),
+                    samples,
+                )
+            play_sr = target_sr
+        else:
+            play_sr = src_sr
+
+        if n_channels == 1:
+            samples = np.column_stack([samples, samples])
+
+        pad_len = int(0.025 * play_sr)
+        silence = np.zeros((pad_len, 2), dtype=np.float32)
+        samples = np.vstack([silence, samples])
+
+        sd.play(samples, play_sr, device=dev_idx)
+        return True
+    except Exception as exc:
+        logger.debug("sounddevice playback skipped or failed (%s)", exc)
+        return False
+
+
 def _play_wav_buffer_crossplatform(wav_bytes: bytes):
     """Play WAV buffer across Windows / macOS / Linux."""
+    # 1. Preferred path: sounddevice (high fidelity, low latency, stereo upmix)
+    if _play_wav_buffer_sounddevice(wav_bytes):
+        return
+
     if sys.platform == "win32":
         _play_wav_buffer_win32(wav_bytes)
         return

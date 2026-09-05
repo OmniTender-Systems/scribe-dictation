@@ -633,13 +633,17 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self.sound_theme_combo.setCurrentIndex(idx)
 
-        self.btn_preview_start = QPushButton("▶ Start")
-        self.btn_preview_start.setToolTip("Audition recording activation sound")
+        self.btn_preview_start = QPushButton("▶ Test Start")
+        self.btn_preview_start.setToolTip(
+            "Play the sound that fires when recording starts"
+        )
         self.btn_preview_start.setFixedHeight(24)
         self.btn_preview_start.clicked.connect(self._preview_start_sound)
 
-        self.btn_preview_stop = QPushButton("■ Stop")
-        self.btn_preview_stop.setToolTip("Audition recording deactivation sound")
+        self.btn_preview_stop = QPushButton("■ Test Stop")
+        self.btn_preview_stop.setToolTip(
+            "Play the sound that fires when recording stops"
+        )
         self.btn_preview_stop.setFixedHeight(24)
         self.btn_preview_stop.clicked.connect(self._preview_stop_sound)
 
