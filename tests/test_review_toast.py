@@ -55,4 +55,3 @@ class TestReviewToast:
 
         toast = ReviewToast("hello world")
         assert toast.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        assert bool(toast.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus)

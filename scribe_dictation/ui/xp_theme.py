@@ -264,14 +264,14 @@ def update_window_titlebar_theme(hwnd: int, theme: str) -> None:
                 hwnd, 20, ctypes.byref(dark_val), ctypes.sizeof(dark_val)
             )
 
-            # 2. Set Windows 11 caption background color to XP Luna Blue (#0a246a -> BGR 0x006A240A)
-            cap_color = ctypes.c_uint32(0x006A240A)
+            # 2. Set Windows 11 caption background color to XP Silver/Tan (#ece9d8 -> BGR 0x00D8E9EC)
+            cap_color = ctypes.c_uint32(0x00D8E9EC)
             dwmapi.DwmSetWindowAttribute(
                 hwnd, 35, ctypes.byref(cap_color), ctypes.sizeof(cap_color)
             )
 
-            # 3. Set Windows 11 title text color to crisp white
-            text_color = ctypes.c_uint32(0x00FFFFFF)
+            # 3. Set Windows 11 title text color to black (#000000 -> BGR 0x00000000)
+            text_color = ctypes.c_uint32(0x00000000)
             dwmapi.DwmSetWindowAttribute(
                 hwnd, 36, ctypes.byref(text_color), ctypes.sizeof(text_color)
             )

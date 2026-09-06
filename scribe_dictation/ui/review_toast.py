@@ -44,7 +44,6 @@ class ReviewToast(QWidget):
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
             | Qt.WindowType.Tool
-            | Qt.WindowType.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFixedSize(340, 150)
@@ -58,7 +57,6 @@ class ReviewToast(QWidget):
 
                 hwnd = int(self.winId())
                 GWL_EXSTYLE = -20
-                WS_EX_NOACTIVATE = 0x08000000
                 WS_EX_TOOLWINDOW = 0x00000080
                 WS_EX_TOPMOST = 0x00000008
                 user32 = ctypes.windll.user32
@@ -66,7 +64,7 @@ class ReviewToast(QWidget):
                 user32.SetWindowLongW(
                     hwnd,
                     GWL_EXSTYLE,
-                    style | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+                    style | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
                 )
             except Exception:
                 pass

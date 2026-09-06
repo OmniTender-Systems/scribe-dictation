@@ -112,6 +112,7 @@ from scribe_dictation.ui.xp_theme import (
     THEME_DEFAULT,
     THEME_LABELS,
     apply_theme,
+    update_window_titlebar_theme,
 )
 from scribe_dictation.ui.vocabulary_dialog import VocabularyDialog
 from scribe_dictation.transcribe.vocabulary import diff_corrections
@@ -2241,6 +2242,8 @@ class ScribeDictationWindow(QMainWindow):
 
     def _open_settings(self):
         dialog = SettingsDialog(self)
+        theme = self.settings.value(SETTINGS_THEME, THEME_DEFAULT)
+        update_window_titlebar_theme(int(dialog.winId()), theme)
         if dialog.exec():
             self._set_menu_bar_visible(self._is_menu_bar_visible())
             new_limit = self._get_history_limit()
@@ -2256,6 +2259,8 @@ class ScribeDictationWindow(QMainWindow):
         wizard = OnboardingWizard(
             vocabulary_manager=getattr(self, "vocabulary_manager", None), parent=self
         )
+        theme = self.settings.value(SETTINGS_THEME, THEME_DEFAULT)
+        update_window_titlebar_theme(int(wizard.winId()), theme)
         wizard.exec()
         self._setup_transcriber()
 
