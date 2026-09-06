@@ -17,6 +17,7 @@ def _get_mac_address() -> Optional[str]:
     """Return the MAC address of the first non-loopback interface."""
     try:
         import uuid
+
         mac = uuid.getnode()
         if mac is not None and (mac >> 40) & 1 == 0:
             return mac.to_bytes(6, "big").hex(":")
@@ -33,9 +34,13 @@ def _get_cpu_identifier() -> str:
     """Cross-platform CPU identifier string."""
     if os.name == "nt":  # Windows
         try:
+            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             result = subprocess.run(
                 ["wmic", "cpu", "get", "ProcessorId"],
-                capture_output=True, text=True, timeout=5
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=creationflags,
             )
             if result.returncode == 0:
                 lines = result.stdout.strip().splitlines()
@@ -46,6 +51,7 @@ def _get_cpu_identifier() -> str:
 
     # Fallback: platform info
     import platform
+
     return platform.processor() or platform.machine() or "unknown"
 
 
