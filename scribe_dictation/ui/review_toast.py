@@ -122,10 +122,22 @@ class ReviewToast(QWidget):
             y = geom.y() + geom.height() - self.height() - 24
             self.move(x, y)
 
+    def enterEvent(self, event):
+        self._dismiss_timer.stop()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if not self._finished:
+            self._dismiss_timer.start(EDIT_GRACE_MS)
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        self._dismiss_timer.stop()
+        super().mousePressEvent(event)
+
     def _on_text_changed(self):
-        # Give the user a grace window to keep typing without the toast
-        # vanishing mid-edit.
-        self._dismiss_timer.start(EDIT_GRACE_MS)
+        # Stop timer while active edits are occurring
+        self._dismiss_timer.stop()
 
     def _finish(self):
         if self._finished:
