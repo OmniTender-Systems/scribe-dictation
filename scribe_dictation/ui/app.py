@@ -1036,6 +1036,14 @@ class ScribeDictationWindow(QMainWindow):
         if app is not None:
             apply_theme(app, theme)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        saved_theme = self.settings.value(SETTINGS_THEME, THEME_DEFAULT)
+        if self.winId():
+            from scribe_dictation.ui.xp_theme import update_window_titlebar_theme
+
+            update_window_titlebar_theme(int(self.winId()), saved_theme)
+
     def _update_app_icon(self):
         from PySide6.QtGui import QIcon
 
