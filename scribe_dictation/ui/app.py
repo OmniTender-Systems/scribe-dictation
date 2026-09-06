@@ -2097,7 +2097,7 @@ class ScribeDictationWindow(QMainWindow):
                             self, "verbal_command_parser", None
                         ),
                     )
-                    text = engine.format_text(text)
+                    text = engine.format(text, mode=mode)
 
         self.capsule.show_done()
         if hasattr(self, "visualizer_ribbon"):
