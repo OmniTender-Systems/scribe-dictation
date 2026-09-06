@@ -413,7 +413,17 @@ def _restore_window_focus(target_hwnd: int) -> bool:
         if attached_fg:
             user32.AttachThreadInput(current_thread_id, fg_thread_id, False)
 
-        return True
+        # SetForegroundWindow can silently fail depending on Windows' foreground-
+        # lock heuristics. Poll briefly for the switch to actually land instead of
+        # assuming success.
+        import time as _time
+
+        for _ in range(5):
+            if user32.GetForegroundWindow() == target_hwnd:
+                return True
+            _time.sleep(0.03)
+
+        return user32.GetForegroundWindow() == target_hwnd
     except Exception as e:
         print(f"Failed to restore window focus: {e}")
         return False
@@ -422,15 +432,20 @@ def _restore_window_focus(target_hwnd: int) -> bool:
 _last_paste_time = 0.0
 
 
-def _simulate_paste(target_hwnd: Optional[int] = None):
-    """Simulate atomic Ctrl+V (Windows/Linux) / Cmd+V (macOS) to paste into active window."""
+def _simulate_paste(target_hwnd: Optional[int] = None) -> bool:
+    """Simulate atomic Ctrl+V (Windows/Linux) / Cmd+V (macOS) to paste into active window.
+
+    Returns ``True`` if we're reasonably confident the paste landed in the
+    intended window (or no specific target was required), ``False`` if focus
+    could not be won and the paste was skipped/likely misdirected.
+    """
     global _last_paste_time
     import time
 
     now = time.monotonic()
     # Debounce paste simulation within 100ms
     if now - _last_paste_time < 0.1:
-        return
+        return False
     _last_paste_time = now
 
     try:
@@ -439,9 +454,20 @@ def _simulate_paste(target_hwnd: Optional[int] = None):
 
             user32 = ctypes.windll.user32
 
-            # If target_hwnd is specified and valid, ensure it is restored to foreground
+            # If target_hwnd is specified and valid, ensure it is restored to
+            # foreground. Retry once — SetForegroundWindow can silently lose
+            # the race to Windows' foreground-lock heuristics on the first try.
             if target_hwnd:
-                _restore_window_focus(target_hwnd)
+                focused = _restore_window_focus(target_hwnd)
+                if not focused:
+                    time.sleep(0.1)
+                    focused = _restore_window_focus(target_hwnd)
+                if not focused:
+                    print(
+                        f"Auto-paste: could not win foreground for hwnd={target_hwnd}; "
+                        "skipping paste, text remains on clipboard"
+                    )
+                    return False
                 time.sleep(0.08)
 
             VK_SHIFT = 0x10
@@ -465,7 +491,7 @@ def _simulate_paste(target_hwnd: Optional[int] = None):
             user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
             time.sleep(0.01)
             user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
-            return
+            return True
 
         from pynput.keyboard import Controller, Key
 
@@ -476,8 +502,10 @@ def _simulate_paste(target_hwnd: Optional[int] = None):
         time.sleep(0.02)
         kb.release("v")
         kb.release(mod)
+        return True
     except Exception as e:
         print(f"Auto-paste failed: {e}")
+        return False
 
 
 def _copy_to_clipboard(text: str) -> bool:
@@ -2123,10 +2151,62 @@ class ScribeDictationWindow(QMainWindow):
         # Auto-paste (simulate Ctrl+V into the target / active window)
         auto_paste = self.settings.value(SETTINGS_AUTO_PASTE, "true") == "true"
         if auto_paste:
-            target_hwnd = getattr(self, "_target_hwnd", None)
+            target_hwnd = self._resolve_paste_target_hwnd()
             from PySide6.QtCore import QTimer
 
-            QTimer.singleShot(150, lambda: _simulate_paste(target_hwnd))
+            QTimer.singleShot(150, lambda: self._do_auto_paste(target_hwnd))
+
+    def _resolve_paste_target_hwnd(self) -> Optional[int]:
+        """Pick the window to paste into.
+
+        ``_target_hwnd`` is captured when recording *starts*; if the user
+        switched windows while dictating (or that window has since closed),
+        pasting into it is stale or silently wrong. Re-check what's actually
+        in the foreground right now and prefer that when it's a plausible
+        external window, falling back to the originally captured target.
+        """
+        recorded_hwnd = getattr(self, "_target_hwnd", None)
+        if sys.platform != "win32":
+            return recorded_hwnd
+
+        try:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+            current_fg = user32.GetForegroundWindow()
+            scribe_hwnd = int(self.winId()) if self.isVisible() else 0
+            capsule_hwnd = int(self.capsule.winId()) if self.capsule.isVisible() else 0
+
+            if (
+                current_fg
+                and current_fg not in (scribe_hwnd, capsule_hwnd)
+                and current_fg != recorded_hwnd
+                and user32.IsWindow(current_fg)
+            ):
+                # Foreground window changed since recording started (and is
+                # still alive) — the user moved on, so that's where paste
+                # should go.
+                return current_fg
+        except Exception:
+            pass
+
+        if recorded_hwnd:
+            try:
+                import ctypes
+
+                if not ctypes.windll.user32.IsWindow(recorded_hwnd):
+                    return None
+            except Exception:
+                pass
+
+        return recorded_hwnd
+
+    def _do_auto_paste(self, target_hwnd: Optional[int]):
+        ok = _simulate_paste(target_hwnd)
+        if not ok:
+            self._update_status(
+                "Couldn't auto-paste — text copied to clipboard, press Ctrl+V"
+            )
 
     # ── Actions ───────────────────────────────────────────────────────
 
