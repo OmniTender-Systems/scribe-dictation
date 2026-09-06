@@ -2306,9 +2306,30 @@ class ScribeDictationWindow(QMainWindow):
 
 def main():
     """Launch the Privacy Scribe application."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "OmniTender.PrivacyScribe.1.2.1"
+            )
+        except Exception:
+            pass
+
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORGANIZATION)
+
+    res_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources")
+    is_pro = is_offline_cache_valid()
+    icon_name = "icon_pro.ico" if is_pro else "icon_free.ico"
+    icon_path = os.path.join(res_dir, icon_name)
+    if not os.path.exists(icon_path):
+        icon_path = os.path.join(res_dir, "icon.ico")
+    if os.path.exists(icon_path):
+        from PySide6.QtGui import QIcon
+
+        app.setWindowIcon(QIcon(icon_path))
 
     saved_theme = QSettings(ORGANIZATION, APP_NAME).value(SETTINGS_THEME, THEME_DEFAULT)
     apply_theme(app, saved_theme)
