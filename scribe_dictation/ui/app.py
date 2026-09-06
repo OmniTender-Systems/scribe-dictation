@@ -2091,19 +2091,26 @@ class ScribeDictationWindow(QMainWindow):
             if mode_id and mode_id != "raw":
                 mode = get_mode_by_id(mode_id)
                 if mode:
+                    use_local = (
+                        str(self.settings.value(SETTINGS_USE_LOCAL, "true")).lower()
+                        == "true"
+                        if hasattr(self, "settings")
+                        else True
+                    )
                     api_key_val = (
                         str(self.settings.value(SETTINGS_API_KEY, "")).strip()
                         if hasattr(self, "settings")
                         else ""
                     )
+                    use_llm = bool(api_key_val) and not use_local
                     engine = FormatEngine(
                         mode=mode,
-                        api_key=api_key_val,
+                        api_key=api_key_val if use_llm else "",
                         verbal_command_parser=getattr(
                             self, "verbal_command_parser", None
                         ),
                     )
-                    text = engine.format(text, mode=mode, use_llm=bool(api_key_val))
+                    text = engine.format(text, mode=mode, use_llm=use_llm)
 
         self.capsule.show_done()
         if hasattr(self, "visualizer_ribbon"):
