@@ -201,6 +201,11 @@ QMenuBar {{
     background-color: {XP_SILVER};
     border-bottom: 2px outset {XP_SILVER_DARK};
 }}
+QMenuBar::item {{
+    background: transparent;
+    color: {XP_TEXT};
+    padding: 3px 8px;
+}}
 QMenuBar::item:selected {{
     background-color: {XP_BLUE};
     color: white;
@@ -237,12 +242,71 @@ THEME_LABELS = {
 }
 
 
+def update_window_titlebar_theme(hwnd: int, theme: str) -> None:
+    """Update Windows DWM title bar styling to match the active theme.
+
+    Applies authentic XP Luna Blue title bar colors (#0a246a with white text)
+    and disables Windows 10/11 dark-mode title bar override on Windows 11.
+    """
+    import sys
+
+    if sys.platform != "win32" or not hwnd:
+        return
+    try:
+        import ctypes
+
+        dwmapi = ctypes.windll.dwmapi
+
+        if theme == THEME_WINDOWS_XP:
+            # 1. Disable Windows DWM dark mode titlebar (0 = light/silver mode)
+            dark_val = ctypes.c_int(0)
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, 20, ctypes.byref(dark_val), ctypes.sizeof(dark_val)
+            )
+
+            # 2. Set Windows 11 caption background color to XP Silver/Tan (#ece9d8 -> BGR 0x00D8E9EC)
+            cap_color = ctypes.c_uint32(0x00D8E9EC)
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, 35, ctypes.byref(cap_color), ctypes.sizeof(cap_color)
+            )
+
+            # 3. Set Windows 11 title text color to black (#000000 -> BGR 0x00000000)
+            text_color = ctypes.c_uint32(0x00000000)
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, 36, ctypes.byref(text_color), ctypes.sizeof(text_color)
+            )
+        else:
+            # Re-enable standard DWM dark mode
+            dark_val = ctypes.c_int(1)
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, 20, ctypes.byref(dark_val), ctypes.sizeof(dark_val)
+            )
+
+            # Reset custom caption and text color (0xFFFFFFFF = DWMWA_COLOR_DEFAULT)
+            default_color = ctypes.c_uint32(0xFFFFFFFF)
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, 35, ctypes.byref(default_color), ctypes.sizeof(default_color)
+            )
+            dwmapi.DwmSetWindowAttribute(
+                hwnd, 36, ctypes.byref(default_color), ctypes.sizeof(default_color)
+            )
+    except Exception:
+        pass
+
+
 def apply_theme(app, theme: str) -> None:
     """Apply the given theme (by key) to the whole application."""
     if theme == THEME_WINDOWS_XP:
         app.setStyleSheet(XP_STYLESHEET)
     else:
         app.setStyleSheet("")
+
+    try:
+        for widget in app.topLevelWidgets():
+            if widget.isWindow() and widget.winId():
+                update_window_titlebar_theme(int(widget.winId()), theme)
+    except Exception:
+        pass
 
 
 def apply_xp_theme(app) -> None:
